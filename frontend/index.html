@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vision Recognition</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+  <!-- Top menu bar -->
+  <div class="menu-bar">
+    <button onclick="viewAction()">View</button>
+    <label for="videoFile" class="upload-btn">Upload</label>
+    <button onclick="toggleVideoDropdown()">Show Videos</button>
+  </div>
+
+  <!-- Hidden file input for upload -->
+  <form id="uploadForm">
+    <input type="file" id="videoFile" accept="video/*" required hidden />
+    <button type="submit">Submit Upload</button>
+</form>
+
+  <!-- Dropdown for videos -->
+  <div id="videoDropdown" style="display:none; background:#f1f1f1; padding:10px;">
+    <!-- Video list will appear here -->
+  </div>
+
+  <!-- Main content -->
+  <div class="container">
+    <div class="video">
+      <p id="status"></p>
+      <div id="loaderContainer" style="display:none;">
+        <div class="loader"></div>
+      </div>
+        <img id="videoStream" width="640" height="480" />
+    </div>
+    <div class="chat">
+      <div id="chatMessages">
+        <div class="message bot">Hello! I’m your vision assistant.</div>
+      </div>
+      <div class="input-area">
+        <input type="text" id="chatInput" placeholder="Ask a question..." onkeypress="if(event.key==='Enter') sendMsg()">
+        <button onclick="sendMsg()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+ // Handle file upload and start live stream
+ const uploadForm = document.getElementById("uploadForm");
+ const videoStream = document.getElementById("videoStream");
+ const status = document.getElementById("status");
+ const chatMessages = document.getElementById("chatMessages");
+
+ uploadForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById("videoFile");
+            const file = fileInput.files[0];
+            if (!file) return alert("Please select a video file!");
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+              document.getElementById("loaderContainer").style.display = "block";
+            const response = await fetch("http://localhost:8000/upload/", {
+                method: "POST",
+                body: formData,
+            });
+            const result = await response.json();
+            console.log(result);
+            
+
+            document.getElementById("loaderContainer").style.display = "none";
+            videoStream.src = `http://localhost:8000/stream/${encodeURIComponent(result.file_path)}`;
+
+        // 📝 Add result summary to chat
+        chatMessages.innerHTML += `
+            <div class="message bot">
+                <b>Video Summary:</b><br></n>
+                ${result.natural_language_summary}<br></n>
+                <b>Details:</b></n>
+                Total Frames: ${result.summary.total_frames}</n>, 
+                FPS: ${result.summary.fps}</n>, 
+                Duration: ${result.summary.duration_seconds}</n>,
+                Cracks Detected: ${result.summary.crack_count}</n>
+            </div>
+        `;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    } catch (err) {
+        console.error(err);
+        document.getElementById("loaderContainer").style.display = "none";
+    }
+    document.getElementById("chatInput").addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        sendMsg();
+    }
+    else {
+        sendQuery();
+    }
+});
+
+async function sendMsg() {
+    const input = document.getElementById('chatInput');
+    const message = input.value.trim();
+    if (!message) return;
+
+    // Show user message
+    const chatMessages = document.getElementById('chatMessages');
+    chatMessages.innerHTML += `<div class="message user">${message}</div>`;
+    input.value = '';
+
+    try {
+        const response = await fetch("http://localhost:8000/query/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: message })  // ✅ wrap question
+        });
+
+        const result = await response.json();
+        console.log(result);
+
+        // Show bot response
+        chatMessages.innerHTML += `<div class="message bot">${result.answer}</div>`;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    } catch (err) {
+        console.error(err);
+        chatMessages.innerHTML += `<div class="message bot">❌ Error: Could not fetch response.</div>`;
+    }
+}
+
+
+});
+
+  </script>
+</body>
+</html>

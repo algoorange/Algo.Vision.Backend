@@ -1,0 +1,44 @@
+# Core dependencies
+fastapi>=0.110.0
+uvicorn>=0.27.1
+python-multipart>=0.0.9
+
+# Computer Vision open cv for image processing
+opencv-python>=4.11.0.86
+numpy>=1.24.0
+
+# Deep Learning ultralytics for YOLOv8
+ultralytics>=8.0.0 # YOLOv8 for object detection
+torch>=2.0.0 # PyTorch for U-Net
+torchvision>=0.15.0 # PyTorch for U-Net
+
+# Object Tracking
+deep-sort-realtime>=1.3.2 # Object Tracking
+
+# NLP and Embeddings
+sentence-transformers>=2.2.2 # Generate the embeddings of the video
+spacy>=3.7.2
+
+
+# Vector Search
+faiss-cpu>=1.7.4
+
+# for http requests
+httpx>=0.28.1
+
+# environment variables
+python-dotenv>=1.0.0
+tqdm>=4.66.1
+
+# generate the embeddings of the video
+sentence-transformers
+
+# store video in vector database
+faiss-cpu
+
+# model for generate the summary of the video
+groq
+
+# crack detection
+segmentation-models-pytorch
+scikit-image #For mask post-processing 
