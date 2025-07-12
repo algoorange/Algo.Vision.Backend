@@ -11,9 +11,9 @@ def track_objects(frame, detections):
     """
     formatted = []
     for det in detections:
-        if det["bbox"] is None:
-            # Skip cracks (U-Net does not produce bounding boxes)
-            continue
+        # if det["bbox"] is None:
+#     # Skip cracks (U-Net does not produce bounding boxes)
+#     continue
 
         x, y, w, h = det["bbox"]
         formatted.append((

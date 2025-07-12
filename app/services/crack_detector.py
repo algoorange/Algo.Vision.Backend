@@ -1,4 +1,4 @@
-import torch
+# import torch
 import segmentation_models_pytorch as smp
 import numpy as np
 import cv2
@@ -23,7 +23,7 @@ def preprocess_frame(frame, size=(256, 256)):
     tensor = torch.from_numpy(normalized).permute(2, 0, 1).float().unsqueeze(0)
     return tensor.to(device)
 
-def predict_crack(frame):
+# def predict_crack(frame):
     """
     Dummy crack detector: detects 'cracks' by looking for thin dark lines
     """

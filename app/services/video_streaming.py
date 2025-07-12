@@ -14,41 +14,30 @@ def stream_video(filename: str):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open video file: {path}")
-    
+
     frame_count = 0
+    FRAMES_DIR = "frames"
+    os.makedirs(FRAMES_DIR, exist_ok=True)
 
     def generate_frames():
-        tracks = []
-
+        nonlocal frame_count
         while True:
             success, frame = cap.read()
             if not success:
                 break
 
-            # Resize frame for faster processing
+            # Resize frame for consistent processing
             scale_factor = RESIZE_WIDTH / frame.shape[1]
             frame = cv2.resize(frame, (RESIZE_WIDTH, int(frame.shape[0] * scale_factor)))
 
-            nonlocal frame_count
             frame_count += 1
-# Set the detection interval to process one frame per second
             if frame_count % DETECTION_INTERVAL == 0:
-                # Run YOLO + crack detector
-                detections, frame = object_detector.detect_objects(frame)
+                detections, annotated_frame = object_detector.detect_objects(frame.copy())
+                # Save annotated frame to frames folder
+                save_path = os.path.join(FRAMES_DIR, f"frame_{frame_count:06d}.jpg")
+                cv2.imwrite(save_path, annotated_frame)
+                frame = annotated_frame
 
-                # Track YOLO objects (skip cracks for DeepSort)
-                tracks = object_tracker.track_objects(frame, detections)
-
-                # Draw ALL YOLO detections (even stationary ones)
-                for det in detections:
-                    if det["source"] == "YOLO" and det["bbox"] is not None:
-                        x, y, w, h = det["bbox"]
-                        label = det["label"]
-                        conf = det["confidence"]
-                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                        cv2.putText(frame, f"{label} {conf:.2f}", (x, y - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                                    
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue

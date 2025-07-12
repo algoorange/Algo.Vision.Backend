@@ -74,7 +74,7 @@ async def process_video(file):
             "summary": summary,
             "tracks": result["tracks"],
             "duration": result["summary"]["duration_seconds"],
-            "crack_count": result["crack_count"]
+            
         })
 
     print("🎉 Video processing complete")    
@@ -84,14 +84,14 @@ async def process_video(file):
         "natural_language_summary": summary,
         "tracks": result["tracks"],
         "file_path": file.filename,
-        "crack_count": result["crack_count"]
+        
     }
 
 
 def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
     frame_id = 0
     track_db = {}
-    crack_count = 0
+    
 
     while True:
         ret = cap.grab()
@@ -106,13 +106,10 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
  # Run object detection
             detections, _ = detect_fn(frame)
             
-            # Count cracks
-            for det in detections:
-                if det.get("label") == "crack":
-                    crack_count += 1
+            
             
             # Track objects (excluding cracks)
-            tracks = track_fn(frame, [d for d in detections if d.get("label") != "crack"])
+            tracks = track_fn(frame, detections)
 
             # Draw tracked objects with blue boxes
             for t in tracks:
@@ -138,19 +135,5 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
                 
         frame_id += 1
 
-# Add crack count to the first track (or create a dummy track if none exists)
-    if crack_count > 0:
-        if not track_db:
-            track_db[0] = {
-                "track_id": 0,
-                "label": "crack",
-                "trajectory": [],
-                "timestamps": [],
-                "frames": []
-            }
-        else:
-            # Add crack count to the first track
-            track_db[0]["crack_count"] = crack_count
-
-    print(f"✅ Processed {frame_id} frames, {len(track_db)} tracks, {crack_count} cracks detected")
+    print(f"✅ Processed {frame_id} frames, {len(track_db)} tracks")
     return list(track_db.values())
