@@ -21,10 +21,10 @@ async def upload_video(file: UploadFile = File(...)):
     return result
 
 
-# Stream video frames with object detection
-@router.get("/{filename}")
-async def stream_video(filename: str):
-    """
-    Stream processed video frames
-    """
-    return video_streaming.stream_video(filename)    
+# # Stream video frames with object detection
+# @router.get("/{filename}")
+# async def stream_video(filename: str):
+#     """
+#     Stream processed video frames
+#     """
+#     return video_streaming.stream_video(filename)    

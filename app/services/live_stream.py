@@ -19,7 +19,7 @@ async def websocket_endpoint(websocket: WebSocket):
         print("Client disconnected")
 
 def process_frame(frame):
-    detections = object_detector.detect_objects(frame)
+    detections, frame = object_detector.detect_objects_with_fast_rcnn(frame)
     tracks = object_tracker.track_objects(frame, detections)
     for t in tracks:
         if not t.is_confirmed():

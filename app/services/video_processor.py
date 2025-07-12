@@ -14,6 +14,9 @@ async def save_video(file: UploadFile) -> str:
     """
     Save uploaded video to disk and return the saved file path
     """
+    if not file.filename:
+        raise ValueError("File must have a filename")
+    
     path = os.path.join(UPLOAD_DIR, file.filename)
     with open(path, "wb") as f:
         f.write(await file.read())
@@ -48,14 +51,14 @@ async def process_video(file):
     interval = int(fps)  # Process 1 frame every 1 second
 
     tracks = build_tracking_data(
-        cap, object_detector.detect_objects, object_tracker.track_objects, fps, interval
+        cap, object_detector.detect_objects_with_fast_rcnn, object_tracker.track_objects, fps, interval, file.filename
     )
     result = format_result(tracks, total_frames, fps, duration)
 
     cap.release()
     # shutil.rmtree(UPLOAD_DIR)
 
-    summary_prompt = build_summary_prompt(tracks)
+    summary_prompt = build_summary_prompt(tracks, max_objects=100)
 
     # Fallback if summary fails
     if "error" in summary_prompt.lower() or not summary_prompt.strip():
@@ -88,7 +91,7 @@ async def process_video(file):
     }
 
 
-def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
+def build_tracking_data(cap, detect_fn, track_fn, fps, interval, filename=None):
     """
     Builds tracking data for detected objects.
 
@@ -98,6 +101,7 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
         track_fn (function): Object tracking function.
         fps (float): Frames per second.
         interval (int): Frame interval for processing.
+        filename (str): Optional filename for saving annotated frames.
 
     Returns:
         list: List of tracked objects.
@@ -105,6 +109,14 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
     frame_id = 0
     track_db = {}
     crack_count = 0
+    
+    # Create annotated frames directory if filename is provided
+    annotated_frames_dir = None
+    if filename:
+        video_name = os.path.splitext(filename)[0]
+        annotated_frames_dir = os.path.join(UPLOAD_DIR, f"{video_name}_processed_frames")
+        os.makedirs(annotated_frames_dir, exist_ok=True)
+        print(f"✅ Created processed frames directory: {annotated_frames_dir}")
 
     while True:
         ret = cap.grab()
@@ -117,7 +129,14 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
                 break
                 
             # Run object detection
-            detections, _ = detect_fn(frame)
+            detections, annotated_frame = detect_fn(frame)
+            
+            # Save annotated frame if directory is set
+            if annotated_frames_dir:
+                frame_filename = f"processed_frame_{frame_id:06d}.jpg"
+                frame_path = os.path.join(annotated_frames_dir, frame_filename)
+                cv2.imwrite(frame_path, annotated_frame)
+                print(f"💾 Saved processed frame: {frame_path}")
             
             # Count cracks
             for det in detections:
@@ -125,7 +144,7 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
                     crack_count += 1
             
             # Track objects (excluding cracks)
-            tracks = track_fn(frame, [d for d in detections if d.get("label") != "crack"])
+            tracks = track_fn(annotated_frame, [d for d in detections if d.get("label") != "crack"])
             
             # Update track database
             for t in tracks:
@@ -151,19 +170,7 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
                 
         frame_id += 1
     
-    # Add crack count to the first track (or create a dummy track if none exists)
-    if crack_count > 0:
-        if not track_db:
-            track_db[0] = {
-                "track_id": 0,
-                "label": "crack",
-                "trajectory": [],
-                "timestamps": [],
-                "frames": []
-            }
-        else:
-            # Add crack count to the first track
-            track_db[0]["crack_count"] = crack_count
-
-    print(f"✅ Processed {frame_id} frames, {len(track_db)} tracks, {crack_count} cracks detected")
+    if annotated_frames_dir:
+        print(f"🎉 Processing complete. Annotated frames saved in: {annotated_frames_dir}")
+    
     return list(track_db.values())

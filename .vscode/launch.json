@@ -3,9 +3,10 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
-    "configurations": [        
+    "configurations": [            
+
         {
-            "name": "Python Debugger: FastAPI",
+            "name": "Python Debugger: FastAPI python3.11",
             "type": "debugpy",
             "request": "launch",
             "module": "uvicorn",
@@ -13,6 +14,7 @@
                 "app.main:app",
                 "--reload"
             ],
+          //  "python": "Python 3.11.0",
             "jinja": true
         }
     ]

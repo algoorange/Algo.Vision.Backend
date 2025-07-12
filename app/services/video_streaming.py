@@ -18,6 +18,12 @@ def stream_video(filename: str):
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open video file: {path}")
     frame_count = 0
+    
+    # Create annotated frames directory
+    video_name = os.path.splitext(filename)[0]
+    annotated_frames_dir = os.path.join(UPLOAD_DIR, f"{video_name}_annotated_frames")
+    os.makedirs(annotated_frames_dir, exist_ok=True)
+    print(f"✅ Created annotated frames directory: {annotated_frames_dir}")
 
     def generate_frames():
         tracks = []
@@ -36,8 +42,17 @@ def stream_video(filename: str):
 
             # Set the detection interval to process one frame per second
             if frame_count % DETECTION_INTERVAL == 0:
-                detections, frame = object_detector.detect_objects(frame)
-                tracks = object_tracker.track_objects(frame, detections)
+                detections, annotated_frame = object_detector.detect_objects_with_fast_rcnn(frame)
+                tracks = object_tracker.track_objects(annotated_frame, detections)
+                
+                # Save annotated frame
+                frame_filename = f"frame_{frame_count:06d}.jpg"
+                frame_path = os.path.join(annotated_frames_dir, frame_filename)
+                cv2.imwrite(frame_path, annotated_frame)
+                print(f"💾 Saved annotated frame: {frame_path}")
+                
+                # Use annotated frame for streaming
+                frame = annotated_frame
 
             # Draw ALL YOLO detections (even stationary ones)
                 for det in detections:
@@ -56,5 +71,6 @@ def stream_video(filename: str):
                    b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
         cap.release()
+        print(f"🎉 Video streaming complete. Annotated frames saved in: {annotated_frames_dir}")
 
     return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")

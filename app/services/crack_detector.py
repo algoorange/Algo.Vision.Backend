@@ -13,6 +13,7 @@ crack_model = smp.Unet(
 )
 crack_model.to(device)
 crack_model.eval()
+print("is cuda available?", torch.cuda.is_available())
 
 def preprocess_frame(frame, size=(256, 256)):
     """
