@@ -11,12 +11,10 @@ DETECTION_INTERVAL = 5  # Detect every 5 frames
 
 def stream_video(filename: str):
     path = os.path.join(UPLOAD_DIR, filename)
-    if not os.path.exists(path):
-        raise RuntimeError(f"Video file does not exist: {path}")
-
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open video file: {path}")
+    
     frame_count = 0
 
     def generate_frames():
@@ -33,13 +31,15 @@ def stream_video(filename: str):
 
             nonlocal frame_count
             frame_count += 1
-
-            # Set the detection interval to process one frame per second
+# Set the detection interval to process one frame per second
             if frame_count % DETECTION_INTERVAL == 0:
+                # Run YOLO + crack detector
                 detections, frame = object_detector.detect_objects(frame)
+
+                # Track YOLO objects (skip cracks for DeepSort)
                 tracks = object_tracker.track_objects(frame, detections)
 
-            # Draw ALL YOLO detections (even stationary ones)
+                # Draw ALL YOLO detections (even stationary ones)
                 for det in detections:
                     if det["source"] == "YOLO" and det["bbox"] is not None:
                         x, y, w, h = det["bbox"]

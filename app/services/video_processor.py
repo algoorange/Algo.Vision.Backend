@@ -89,19 +89,6 @@ async def process_video(file):
 
 
 def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
-    """
-    Builds tracking data for detected objects.
-
-    Args:
-        cap (cv2.VideoCapture): The video capture object.
-        detect_fn (function): Object detection function.
-        track_fn (function): Object tracking function.
-        fps (float): Frames per second.
-        interval (int): Frame interval for processing.
-
-    Returns:
-        list: List of tracked objects.
-    """
     frame_id = 0
     track_db = {}
     crack_count = 0
@@ -115,8 +102,8 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
             ret, frame = cap.retrieve()
             if not ret:
                 break
-                
-            # Run object detection
+
+ # Run object detection
             detections, _ = detect_fn(frame)
             
             # Count cracks
@@ -126,16 +113,16 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
             
             # Track objects (excluding cracks)
             tracks = track_fn(frame, [d for d in detections if d.get("label") != "crack"])
-            
-            # Update track database
+
+            # Draw tracked objects with blue boxes
             for t in tracks:
                 if not t.is_confirmed():
                     continue
-                    
-                tid = t.track_id
+
                 bbox = t.to_ltrb()
                 center = ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
                 
+                tid = t.track_id
                 if tid not in track_db:
                     track_db[tid] = {
                         "track_id": tid,
@@ -150,8 +137,8 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
                 track_db[tid]["frames"].append(frame_id)
                 
         frame_id += 1
-    
-    # Add crack count to the first track (or create a dummy track if none exists)
+
+# Add crack count to the first track (or create a dummy track if none exists)
     if crack_count > 0:
         if not track_db:
             track_db[0] = {

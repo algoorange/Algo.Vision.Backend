@@ -1,3 +1,4 @@
+
 from app.services.object_tracker import calculate_angle
 
 def format_result(tracks, total_frames, fps, duration):
@@ -13,11 +14,13 @@ def format_result(tracks, total_frames, fps, duration):
         formatted_track = {
             "track_id": track["track_id"],
             "label": track["label"],
-            "trajectory": track["trajectory"],
-            "timestamps": track["timestamps"],
-            "frames": track["frames"],
-            "actions": describe_actions(track["trajectory"])
+            "total_frames": total_frames,
+            "fps": fps,
+            "duration_seconds": round(duration, 2),
+            "object_count": len(formatted_tracks),
+            "crack_count": crack_count
         }
+        
         formatted_tracks.append(formatted_track)
 
     return {
@@ -114,5 +117,7 @@ def get_main_direction(dx, dy):
     #     + "\n".join(object_lines)
     #     + "\nProvide a concise summary of the objects' movements in the video."
     # )
+
+
 
 
