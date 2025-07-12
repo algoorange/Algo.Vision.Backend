@@ -35,9 +35,7 @@ def detect_objects(frame):
             cv2.putText(frame, f"{label} {conf:.2f}", (x1, y1-10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-
-
-# Run Crack Detector
+    # ---------- Crack Detection ----------
     crack_mask = predict_crack(frame)
     crack_confidence = crack_mask.mean() / 255.0  # crude confidence
 
