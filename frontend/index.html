@@ -19,7 +19,7 @@
   <form id="uploadForm">
     <input type="file" id="videoFile" accept="video/*" required hidden />
     <button type="submit">Submit Upload</button>
-</form>
+  </form>
 
   <!-- Dropdown for videos -->
   <div id="videoDropdown" style="display:none; background:#f1f1f1; padding:10px;">
@@ -27,33 +27,69 @@
   </div>
 
   <!-- Main content -->
-  <div class="container">
-    <div class="video">
-      <p id="status"></p>
-      <div id="loaderContainer" style="display:none;">
-        <div class="loader"></div>
-      </div>
-      <!-- Frames Grid -->
-      <div id="framesGrid"> </div>
+  <div class="main-flex-layout">
+    <!-- Sidebar for video list -->
+    <div id="videoListSidebar">
+      <div class="sidebar-title">Uploaded Videos</div>
+      <div id="videoList"></div>
     </div>
-    <div class="chat">
-      <div id="chatMessages">
-        <div class="message bot">Hello! I’m your vision assistant.</div>
+    <!-- Main content area: frames grid and chat -->
+    <div class="main-content">
+      <div class="video">
+        <p id="status"></p>
+        <div id="loaderContainer" style="display:none;">
+          <div class="loader"></div>
+        </div>
+        <!-- Frames Grid -->
+        <div id="framesGrid"> </div>
       </div>
-      <div class="input-area">
-        <input type="text" id="chatInput" placeholder="Ask a question..." onkeypress="if(event.key==='Enter') sendMsg()">
-        <button onclick="sendMsg()">Send</button>
+      <div class="chat">
+        <div id="chatMessages">
+          <div class="message bot">Hello! I’m your vision assistant.</div>
+        </div>
+        <div class="input-area">
+          <input type="text" id="chatInput" placeholder="Ask a question..." onkeypress="if(event.key==='Enter') sendMsg()">
+          <button onclick="sendMsg()">Send</button>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
- // Handle file upload and start live stream
- const uploadForm = document.getElementById("uploadForm");
- const status = document.getElementById("status");
- const chatMessages = document.getElementById("chatMessages");
+    // --- Video List Sidebar Logic ---
+    async function loadVideoListSidebar() {
+      const videoListDiv = document.getElementById('videoList');
+      videoListDiv.innerHTML = '<div style="color:#888; padding:10px;">Loading videos...</div>';
+      try {
+        const resp = await fetch('http://localhost:8000/videos/list');
+        const videos = await resp.json();
+        if (!videos.length) {
+          videoListDiv.innerHTML = '<div style="color:#888; padding:10px;">No videos uploaded.</div>';
+          return;
+        }
+        videoListDiv.innerHTML = '';
+        videos.forEach(filename => {
+          // Extract video_id from filename (assumes format: {uuid}_{original_filename})
+          const videoId = filename.split('_')[0];
+          const displayName = filename.split('_')[1];
+          const card = document.createElement('div');
+          card.className = 'video-card';
+          card.title = filename;
+          card.textContent = displayName;
+          card.onclick = () => loadFramesGrid(videoId);
+          videoListDiv.appendChild(card);
+        });
+      } catch (err) {
+        videoListDiv.innerHTML = '<div style="color:#f55; padding:10px;">Failed to load videos.</div>';
+      }
+    }
+    // Load video list on page load
+    window.addEventListener('DOMContentLoaded', loadVideoListSidebar);
 
- let lastUploadedVideoId = null;
+    // Handle file upload and start live stream
+    const uploadForm = document.getElementById("uploadForm");
+    const status = document.getElementById("status");
+    const chatMessages = document.getElementById("chatMessages");
 
 uploadForm.addEventListener("submit", async (e) => {
     e.preventDefault();
