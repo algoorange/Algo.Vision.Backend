@@ -1,5 +1,9 @@
 .venv/
 venv/
+
+.311venv/
+311venv/
+
 data/
 __pycache__
 frames/
