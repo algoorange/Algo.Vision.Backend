@@ -1,6 +1,9 @@
 import os
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
+from pymongo import MongoClient
+from fastapi import Body, Query
 
 UPLOAD_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..', 'uploads')
@@ -8,7 +11,10 @@ UPLOAD_DIR = os.path.abspath(
 
 router = APIRouter()
 
-from fastapi import Query
+# Connect to MongoDB (adjust the URI as needed)
+client = MongoClient("mongodb://localhost:27017/")
+db = client["algo_compliance_db_2"]  # Your database name
+chat_collection = db["user_chat_history"]  # Your collection name
 
 @router.get("/frames/list", response_class=JSONResponse)
 def list_frames(video_id: str = Query(..., description="Unique video ID")):
@@ -42,3 +48,48 @@ def list_videos():
         return []
     files = [f for f in os.listdir(UPLOAD_DIR) if os.path.isfile(os.path.join(UPLOAD_DIR, f))]
     return files
+
+
+from typing import Optional
+from fastapi import Body
+
+@router.post("/user_chat_history", response_class=JSONResponse)
+def save_user_chat_history(
+    video_id: str = Body(...),
+    summary: Optional[str] = Body(None),
+    role: str = Body(...),  # "user" or "bot"
+    text: str = Body(...)
+):
+    """
+    Save a chat message for a specific video.
+    If summary is provided and not empty, update it; otherwise, leave it unchanged.
+    """
+    update_fields = {
+        "$push": {"messages": {"role": role, "text": text}}
+    }
+    if summary:
+        update_fields["$set"] = {"summary": summary}
+
+    chat_collection.update_one(
+        {"video_id": video_id},
+        update_fields,
+        upsert=True
+    )
+    return {"success": True}
+
+
+@router.get("/user_chat_history_fetch", response_class=JSONResponse)
+def fetch_user_chat_history(video_id: str = Query(..., description="Unique video ID")):
+    print("Fetching chat for video_id:", video_id)
+    """
+    Fetch chat history for a specific video.
+    Returns a dict with 'messages' and optional 'summary'.
+    """
+    doc = chat_collection.find_one({"video_id": video_id}, {"_id": 0})  # Exclude MongoDB's _id
+    if doc:
+        print("Found chat history:", doc)
+        return doc
+    else:
+        print("No chat history found for video_id:", video_id)
+        return {"messages": []}
+

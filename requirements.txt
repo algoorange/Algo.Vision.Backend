@@ -42,3 +42,6 @@ groq
 # crack detection
 segmentation-models-pytorch
 scikit-image #For mask post-processing 
+
+# MongoDB
+pymongo>=4.0.0

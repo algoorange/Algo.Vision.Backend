@@ -56,6 +56,10 @@
   </div>
 
   <script>
+// Global variable to track the currently selected or uploaded video
+let lastUploadedVideoId = null;
+
+
     // --- Video List Sidebar Logic ---
     async function loadVideoListSidebar() {
       const videoListDiv = document.getElementById('videoList');
@@ -76,8 +80,14 @@
           card.className = 'video-card';
           card.title = filename;
           card.textContent = displayName;
-          card.onclick = () => loadFramesGrid(videoId);
+          card.onclick = () => {
+            loadFramesGrid(videoId);
+            loadChatHistory(videoId);
+            lastUploadedVideoId = videoId;
+          };
+          
           videoListDiv.appendChild(card);
+
         });
       } catch (err) {
         videoListDiv.innerHTML = '<div style="color:#f55; padding:10px;">Failed to load videos.</div>';
@@ -113,20 +123,25 @@ uploadForm.addEventListener("submit", async (e) => {
 
         // Update frames grid for this upload
         await loadFramesGrid(result.video_id);
+        await loadChatHistory(result.video_id);
 
         // Add result summary to chat
         chatMessages.innerHTML += `
             <div class="message bot">
-                <b>Video Summary:</b><br></n>
-                ${result.natural_language_summary}<br></n>
-                <b>Details:</b></n>
-                Total Frames: ${result.summary.total_frames}</n>, 
-                FPS: ${result.summary.fps}</n>, 
-                Duration: ${result.summary.duration_seconds}</n>,
-                Cracks Detected: ${result.summary.crack_count}</n>
+                <b>Video Summary:</b><br>
+                ${result.natural_language_summary}<br>
+                <b>Details:</b>
+                Total Frames: ${result.summary.total_frames}, 
+                FPS: ${result.summary.fps}, 
+                Duration: ${result.summary.duration_seconds},
+                Cracks Detected: ${result.summary.crack_count}
             </div>
         `;
         chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        // Store the summary in MongoDB for this video
+        const summaryText = `${result.natural_language_summary}\nDetails: Total Frames: ${result.summary.total_frames}, FPS: ${result.summary.fps}, Duration: ${result.summary.duration_seconds}, Cracks Detected: ${result.summary.crack_count}`;
+        await saveChatMessage(result.video_id, summaryText, "bot", summaryText);
 
     } catch (err) {
         console.error(err);
@@ -134,35 +149,90 @@ uploadForm.addEventListener("submit", async (e) => {
     }
 });
 
-async function sendMsg() {
-    const input = document.getElementById('chatInput');
-    const message = input.value.trim();
-    if (!message) return;
+async function loadChatHistory(videoId) {
+  const chatMessages = document.getElementById('chatMessages');
+  chatMessages.innerHTML = ''; // Clear chat box
 
-    // Show user message
-    const chatMessages = document.getElementById('chatMessages');
-    chatMessages.innerHTML += `<div class="message user">${message}</div>`;
-    input.value = '';
+  try {
+    // Show loading message
+    chatMessages.innerHTML = '<div class="message bot">Loading chat history...</div>';
 
-    try {
-        const response = await fetch("http://localhost:8000/query/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question: message })  // ✅ wrap question
-        });
+    // Fetch chat history for the selected video
+    const resp = await fetch(`http://localhost:8000/videos/user_chat_history_fetch?video_id=${encodeURIComponent(videoId)}`);
+    const history = await resp.json();
 
-        const result = await response.json();
-        console.log(result);
-
-        // Show bot response
-        chatMessages.innerHTML += `<div class="message bot">${result.answer}</div>`;
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-
-    } catch (err) {
-        console.error(err);
-        chatMessages.innerHTML += `<div class="message bot">❌ Error: Could not fetch response.</div>`;
+    // If there are no messages, show a friendly message
+    if (!history || !Array.isArray(history.messages) || history.messages.length === 0) {
+      return;
     }
+
+    // Build the chat HTML
+    let html = '';
+    if (history.summary) {
+      html += `<div class="message bot"><b>Video Summary:</b><br>${history.summary}</div>`;
+    }
+    history.messages.forEach(msg => {
+      if (msg && msg.role && msg.text) {
+        html += `<div class="message ${msg.role}">${msg.text}</div>`;
+      }
+    });
+
+    chatMessages.innerHTML = html;
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  } catch (err) {
+    chatMessages.innerHTML = '<div class="message bot">❌ Failed to load chat history.</div>';
+  }
 }
+
+async function saveChatMessage(videoId, summary, role, text) {
+  const body = { video_id: videoId, role, text };
+  if (summary) body.summary = summary;
+  await fetch("http://localhost:8000/videos/user_chat_history", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+}  
+
+async function sendMsg() {
+  const input = document.getElementById('chatInput');
+  const message = input.value.trim();
+  if (!message) return;
+
+  // Show user message
+  const chatMessages = document.getElementById('chatMessages');
+  chatMessages.innerHTML += `<div class="message user">${message}</div>`;
+  input.value = '';
+
+  // Save user message to MongoDB (no summary for chat, so pass empty string)
+  if (lastUploadedVideoId) {
+    await saveChatMessage(lastUploadedVideoId, "", "user", message);
+  }
+
+  try {
+    const response = await fetch("http://localhost:8000/query/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        question: message,
+        video_id: lastUploadedVideoId // Make sure this is set when a video is selected
+      })
+    });
+
+    const result = await response.json();
+    chatMessages.innerHTML += `<div class="message bot">${result.answer}</div>`;
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // Save bot response to MongoDB
+    if (lastUploadedVideoId) {
+      await saveChatMessage(lastUploadedVideoId, "bot", result.answer);
+    }
+
+  } catch (err) {
+    chatMessages.innerHTML += `<div class="message bot">❌ Error: Could not fetch response.</div>`;
+  }
+}
+
 
     // --- Frames Grid Logic ---
     // Loads and displays frames for a given video ID
