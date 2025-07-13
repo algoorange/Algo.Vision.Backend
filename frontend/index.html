@@ -33,7 +33,8 @@
       <div id="loaderContainer" style="display:none;">
         <div class="loader"></div>
       </div>
-        <img id="videoStream" width="640" height="480" />
+      <!-- Frames Grid -->
+      <div id="framesGrid"></div>
     </div>
     <div class="chat">
       <div id="chatMessages">
@@ -53,29 +54,32 @@
  const status = document.getElementById("status");
  const chatMessages = document.getElementById("chatMessages");
 
- uploadForm.addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const fileInput = document.getElementById("videoFile");
-            const file = fileInput.files[0];
-            if (!file) return alert("Please select a video file!");
+ let lastUploadedVideoId = null;
 
-            const formData = new FormData();
-            formData.append("file", file);
+uploadForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fileInput = document.getElementById("videoFile");
+    const file = fileInput.files[0];
+    if (!file) return alert("Please select a video file!");
 
-            try {
-              document.getElementById("loaderContainer").style.display = "block";
-            const response = await fetch("http://localhost:8000/upload/", {
-                method: "POST",
-                body: formData,
-            });
-            const result = await response.json();
-            console.log(result);
-            
+    const formData = new FormData();
+    formData.append("file", file);
 
-            document.getElementById("loaderContainer").style.display = "none";
-            videoStream.src = `http://localhost:8000/stream/${encodeURIComponent(result.file_path)}`;
+    try {
+        document.getElementById("loaderContainer").style.display = "block";
+        const response = await fetch("http://localhost:8000/upload/", {
+            method: "POST",
+            body: formData,
+        });
+        const result = await response.json();
+        console.log(result);
+        document.getElementById("loaderContainer").style.display = "none";
+        lastUploadedVideoId = result.video_id;
 
-        // 📝 Add result summary to chat
+        // Update frames grid for this upload
+        await loadFramesGrid(result.video_id);
+
+        // Add result summary to chat
         chatMessages.innerHTML += `
             <div class="message bot">
                 <b>Video Summary:</b><br></n>
@@ -92,14 +96,6 @@
     } catch (err) {
         console.error(err);
         document.getElementById("loaderContainer").style.display = "none";
-    }
-    document.getElementById("chatInput").addEventListener("keydown", function (event) {
-    if (event.key === "Enter") {
-        event.preventDefault();
-        sendMsg();
-    }
-    else {
-        sendQuery();
     }
 });
 
@@ -133,9 +129,42 @@ async function sendMsg() {
     }
 }
 
-
-});
-
+    // --- Frames Grid Logic ---
+    async function loadFramesGrid(videoId = null) {
+      const grid = document.getElementById('framesGrid');
+      grid.innerHTML = '<div style="color:#888">Loading frames...</div>';
+      try {
+        let query = '';
+        if (videoId) {
+          query = `?video_id=${encodeURIComponent(videoId)}`;
+        } else if (lastUploadedVideoId) {
+          query = `?video_id=${encodeURIComponent(lastUploadedVideoId)}`;
+        } else {
+          grid.innerHTML = '<div style="color:#888">No frames found.</div>';
+          return;
+        }
+        const resp = await fetch(`http://localhost:8000/videos/frames/list${query}`);
+        const frames = await resp.json();
+        if (!frames.length) {
+          grid.innerHTML = '<div style="color:#888">No frames found.</div>';
+          return;
+        }
+        grid.innerHTML = '';
+        frames.forEach((filename, idx) => {
+          const frameBox = document.createElement('div');
+          frameBox.className = 'frame-box';
+          frameBox.innerHTML = `
+            <img src="http://localhost:8000/frames/${videoId || lastUploadedVideoId}/${filename}" class="frame-img" />
+            <div class="frame-label">F${idx+1}</div>
+          `;
+          grid.appendChild(frameBox);
+        });
+      } catch (e) {
+        grid.innerHTML = '<div style="color:#f55">Failed to load frames.</div>';
+      }
+    }
+    // Load frames on page load
+    window.addEventListener('DOMContentLoaded', () => loadFramesGrid());
   </script>
 </body>
 </html>

@@ -1,49 +1,40 @@
-import cv2
-import os
-from fastapi.responses import StreamingResponse
-from app.services import object_detector, object_tracker
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# import cv2
+# import os
 
-RESIZE_WIDTH = 640
-DETECTION_INTERVAL = 5  # Detect every 5 frames
+# from app.services import object_detector, object_tracker
 
-def stream_video(filename: str):
-    path = os.path.join(UPLOAD_DIR, filename)
-    cap = cv2.VideoCapture(path)
-    if not cap.isOpened():
-        raise RuntimeError(f"Failed to open video file: {path}")
+# UPLOAD_DIR = "uploads"
+# os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    frame_count = 0
-    FRAMES_DIR = "frames"
-    os.makedirs(FRAMES_DIR, exist_ok=True)
+# RESIZE_WIDTH = 640
+# DETECTION_INTERVAL = 5  # Detect every 5 frames
 
-    def generate_frames():
-        nonlocal frame_count
-        while True:
-            success, frame = cap.read()
-            if not success:
-                break
+# def extract_and_save_frames(filename: str):
+#     path = os.path.join(UPLOAD_DIR, filename)
+#     cap = cv2.VideoCapture(path)
+#     if not cap.isOpened():
+#         raise RuntimeError(f"Failed to open video file: {path}")
 
-            # Resize frame for consistent processing
-            scale_factor = RESIZE_WIDTH / frame.shape[1]
-            frame = cv2.resize(frame, (RESIZE_WIDTH, int(frame.shape[0] * scale_factor)))
+#     frame_count = 0
+#     FRAMES_DIR = "frames"
+#     os.makedirs(FRAMES_DIR, exist_ok=True)
 
-            frame_count += 1
-            if frame_count % DETECTION_INTERVAL == 0:
-                detections, annotated_frame = object_detector.detect_objects(frame.copy())
-                # Save annotated frame to frames folder
-                save_path = os.path.join(FRAMES_DIR, f"frame_{frame_count:06d}.jpg")
-                cv2.imwrite(save_path, annotated_frame)
-                frame = annotated_frame
+#     while True:
+#         success, frame = cap.read()
+#         if not success:
+#             break
 
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if not ret:
-                continue
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+#         # Resize frame for consistent processing
+#         scale_factor = RESIZE_WIDTH / frame.shape[1]
+#         frame = cv2.resize(frame, (RESIZE_WIDTH, int(frame.shape[0] * scale_factor)))
 
-        cap.release()
+#         frame_count += 1
+#         if frame_count % DETECTION_INTERVAL == 0:
+#             detections, annotated_frame = object_detector.detect_objects(frame.copy())
+#             # Save annotated frame to frames folder
+#             save_path = os.path.join(FRAMES_DIR, f"frame_{frame_count:06d}.jpg")
+#             cv2.imwrite(save_path, annotated_frame)
 
-    return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+#     cap.release()
+#     return frame_count

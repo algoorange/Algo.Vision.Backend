@@ -5,7 +5,7 @@ import numpy as np
 # from app.services.crack_detector import predict_crack
 
 # Load YOLOv8 model
-yolo_model = YOLO("yolov8n.pt")
+yolo_model = YOLO("yolov8x.pt")
 
 def detect_objects(frame):
     """

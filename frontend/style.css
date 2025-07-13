@@ -80,6 +80,91 @@ body {
   box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
 }
 
+/* Frames Grid Styles */
+/* --- Frames Grid (Professional Modern Style) --- */
+.frames-grid, #framesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 24px;
+  padding: 24px 0 0 0;
+  justify-items: center;
+  align-items: start;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 140px;
+}
+.frame-box {
+  background: linear-gradient(135deg, #23272f 80%, #2b2a3a 100%);
+  border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+  padding: 14px 14px 0 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+  border: 1.5px solid #23272f;
+  min-width: 140px;
+  max-width: 210px;
+  margin-bottom: 8px;
+  position: relative;
+}
+.frame-box:hover {
+  transform: translateY(-6px) scale(1.045);
+  box-shadow: 0 8px 32px #3af8fa44;
+  border-color: #3af8fa;
+  z-index: 2;
+}
+.frame-img {
+  width: 136px;
+  height: 102px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1.5px solid #222;
+  margin-bottom: 10px;
+  background: #181c24;
+  box-shadow: 0 1px 5px #0008;
+  transition: box-shadow 0.17s;
+}
+.frame-box:hover .frame-img {
+  box-shadow: 0 4px 24px #3af8fa55;
+}
+.frame-label {
+  color: #fff;
+  background: linear-gradient(90deg, #3af8fa 40%, #2b82f6 100%);
+  border-radius: 0 0 8px 8px;
+  font-size: 1.02rem;
+  font-weight: 600;
+  padding: 4px 0 4px 0;
+  width: 100%;
+  text-align: center;
+  margin-bottom: 2px;
+  letter-spacing: 1px;
+  box-shadow: 0 1px 4px #3af8fa44;
+}
+@media (max-width: 700px) {
+  .frames-grid, #framesGrid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 12px;
+    padding: 8px 0 0 0;
+  }
+  .frame-box {
+    min-width: 90px;
+    max-width: 140px;
+    padding: 7px 7px 0 7px;
+  }
+  .frame-img {
+    width: 80px;
+    height: 60px;
+    border-radius: 4px;
+  }
+  .frame-label {
+    font-size: 0.92rem;
+    border-radius: 0 0 4px 4px;
+  }
+}
+/* --- End Frames Grid Styles --- */
+
+
 /* Chat section */
 .chat {
   flex: 1;

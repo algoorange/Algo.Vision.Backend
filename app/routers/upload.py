@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File
 from app.services import video_processor
-from app.services import video_streaming
 import os
+import uuid
 
 
 router = APIRouter()
@@ -14,17 +14,8 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.post("/")
 async def upload_video(file: UploadFile = File(...)):
     """
-    Uploads the video and starts streaming the processed frames
+    Uploads the video and extracts frames from the uploaded video. Generates a unique video ID and stores frames per video.
     """
-    # Save video temporarily and stream processed frames
-    result = await video_processor.process_video(file)
-    return result
-
-
-# Stream video frames with object detection
-@router.get("/{filename}")
-async def stream_video(filename: str):
-    """
-    Stream processed video frames
-    """
-    return video_streaming.stream_video(filename)    
+    video_id = str(uuid.uuid4())
+    result = await video_processor.process_video(file, video_id)
+    return {"video_id": video_id, **result}
