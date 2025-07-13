@@ -129,39 +129,54 @@ async function sendMsg() {
 }
 
     // --- Frames Grid Logic ---
-    async function loadFramesGrid(videoId = null) {
-      const grid = document.getElementById('framesGrid');
-      grid.innerHTML = status.innerHTML;
-      try {
-        let query = '';
-        if (videoId) {
-          query = `?video_id=${encodeURIComponent(videoId)}`;
-        } else if (lastUploadedVideoId) {
-          query = `?video_id=${encodeURIComponent(lastUploadedVideoId)}`;
-        } else {
-          grid.innerHTML = '<div style="color:#888">No frames found.</div>';
-          return;
-        }
-        const resp = await fetch(`http://localhost:8000/videos/frames/list${query}`);
-        const frames = await resp.json();
-        if (!frames.length) {
-          grid.innerHTML = '<div style="color:#888">No frames found.</div>';
-          return;
-        }
-        grid.innerHTML = '';
-        frames.forEach((filename, idx) => {
-          const frameBox = document.createElement('div');
-          frameBox.className = 'frame-box';
-          frameBox.innerHTML = `
-            <img src="http://localhost:8000/frames/${videoId || lastUploadedVideoId}/${filename}" class="frame-img" />
-            <div class="frame-label">F${idx+1}</div>
-          `;
-          grid.appendChild(frameBox);
-        });
-      } catch (e) {
-        grid.innerHTML = '<div style="color:#f55">Failed to load frames.</div>';
-      }
+    // Loads and displays frames for a given video ID
+async function loadFramesGrid(videoId = null) {
+  const grid = document.getElementById('framesGrid');
+  // Show loading or status message
+  grid.innerHTML = '<div style="color:#888">Loading frames...</div>';
+
+  // Determine which video ID to use
+  let chosenVideoId = videoId || lastUploadedVideoId;
+  if (!chosenVideoId) {
+    grid.innerHTML = '<div style="color:#888">No frames found.</div>';
+    return;
+  }
+
+  // Build the API query URL
+  const query = `?video_id=${encodeURIComponent(chosenVideoId)}`;
+  const apiUrl = `http://localhost:8000/videos/frames/list${query}`;
+
+  try {
+    // Fetch the list of frames from the backend
+    const response = await fetch(apiUrl);
+    const frames = await response.json();
+
+    // If there are no frames, show a message
+    if (!frames.length) {
+      grid.innerHTML = '<div style="color:#888">No frames found.</div>';
+      return;
     }
+
+    // Clear the grid and add each frame as a card
+    grid.innerHTML = '';
+    frames.forEach((filename, idx) => {
+      // Create a container for each frame
+      const frameBox = document.createElement('div');
+      frameBox.className = 'frame-box';
+
+      // Set the frame image and label
+      frameBox.innerHTML = `
+        <img src="http://localhost:8000/frames/${chosenVideoId}/${filename}" class="frame-img" />
+        <div class="frame-label">Frame ${idx + 1}</div>
+      `;
+      grid.appendChild(frameBox);
+    });
+  } catch (error) {
+    // Show error message if something goes wrong
+    grid.innerHTML = '<div style="color:#f55">Failed to load frames.</div>';
+  }
+}
+
     // Load frames on page load
     window.addEventListener('DOMContentLoaded', () => loadFramesGrid());
   </script>
