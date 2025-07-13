@@ -130,16 +130,16 @@ body {
 }
 .frame-label {
   color: #fff;
-  background: linear-gradient(90deg, #3af8fa 40%, #2b82f6 100%);
+  background: #23272f;
   border-radius: 0 0 8px 8px;
   font-size: 1.02rem;
   font-weight: 600;
-  padding: 4px 0 4px 0;
+  padding: 6px 0 6px 0;
   width: 100%;
   text-align: center;
   margin-bottom: 2px;
   letter-spacing: 1px;
-  box-shadow: 0 1px 4px #3af8fa44;
+  box-shadow: 0 1px 4px #0005;
 }
 @media (max-width: 700px) {
   .frames-grid, #framesGrid {

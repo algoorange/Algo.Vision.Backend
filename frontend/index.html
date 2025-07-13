@@ -34,7 +34,7 @@
         <div class="loader"></div>
       </div>
       <!-- Frames Grid -->
-      <div id="framesGrid"></div>
+      <div id="framesGrid"> </div>
     </div>
     <div class="chat">
       <div id="chatMessages">
@@ -50,7 +50,6 @@
   <script>
  // Handle file upload and start live stream
  const uploadForm = document.getElementById("uploadForm");
- const videoStream = document.getElementById("videoStream");
  const status = document.getElementById("status");
  const chatMessages = document.getElementById("chatMessages");
 
@@ -132,7 +131,7 @@ async function sendMsg() {
     // --- Frames Grid Logic ---
     async function loadFramesGrid(videoId = null) {
       const grid = document.getElementById('framesGrid');
-      grid.innerHTML = '<div style="color:#888">Loading frames...</div>';
+      grid.innerHTML = status.innerHTML;
       try {
         let query = '';
         if (videoId) {
