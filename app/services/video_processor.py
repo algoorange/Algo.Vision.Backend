@@ -36,47 +36,58 @@ async def process_video(file, video_id):
     Returns:
         dict: Summary and tracking details, including video_id.
     """
-    # Generate unique video ID
+    # Create the frames directory for this video if it doesn't exist
     frames_dir = os.path.join(FRAMES_BASE_DIR, video_id)
     os.makedirs(frames_dir, exist_ok=True)
 
-    # Save video with UUID
-    filename = f"{video_id}_{file.filename}"
-    path = os.path.join(UPLOAD_DIR, filename)
-    with open(path, "wb") as f:
-        f.write(await file.read())
-    print(f"✅ Video saved at: {path}")
+    # Save the uploaded video file with the video_id in its name
+    video_filename = f"{video_id}_{file.filename}"
+    video_path = os.path.join(UPLOAD_DIR, video_filename)
+    with open(video_path, "wb") as video_file:
+        video_file.write(await file.read())
+    print(f"✅ Video saved at: {video_path}")
 
-    # Extract frames to frames/{video_id}/
-    cap = cv2.VideoCapture(path)
+    # Open the saved video using OpenCV
+    cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / fps if fps else 0
-    interval = int(fps * 10) if fps else 1  # Process 1 frame every 10 seconds
+    if not fps or fps <= 0:
+        fps = 1  # Prevent division by zero
+    interval = int(fps * 5)  # Extract one frame every 5 seconds
 
-    frame_id = 0
-    saved_frame_count = 0
+    frame_number = 0  # Tracks the current frame number
+    frames_saved = 0  # Counts how many frames we saved
+
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame_id += 1
-        if frame_id % interval == 0:
-            scale_factor = 640 / frame.shape[1]
-            frame_resized = cv2.resize(frame, (640, int(frame.shape[0] * scale_factor)))
-            detections, annotated_frame = object_detector.detect_objects(frame_resized.copy())
-            save_path = os.path.join(frames_dir, f"frame_{frame_id:06d}.jpg")
-            cv2.imwrite(save_path, annotated_frame)
-            saved_frame_count += 1
-    cap.release()
-    print(f"✅ Extracted {saved_frame_count} frames to {frames_dir}")
+        success, frame = cap.read()
+        if not success:
+            break  # No more frames to read
+        frame_number += 1
+
+        # Only save a frame every 'interval' frames
+        if frame_number % interval == 0:
+            # Resize the frame to width 640px, keeping aspect ratio
+            scale = 640 / frame.shape[1]
+            new_height = int(frame.shape[0] * scale)
+            frame_resized = cv2.resize(frame, (640, new_height))
+
+            # Run object detection and get the annotated frame
+            _, annotated_frame = object_detector.detect_objects(frame_resized.copy())
+
+            # Save the annotated frame as a JPEG
+            frame_filename = f"frame_{frame_number:06d}.jpg"
+            frame_path = os.path.join(frames_dir, frame_filename)
+            cv2.imwrite(frame_path, annotated_frame)
+            frames_saved += 1
+
+    cap.release()  # Release the video file
+    print(f"✅ Extracted {frames_saved} frames to {frames_dir}")
 
     # Tracking and summary (on full video, not just extracted frames)
-    cap = cv2.VideoCapture(path)
+    cap = cv2.VideoCapture(video_path)
     tracks = build_tracking_data(
         cap, object_detector.detect_objects, object_tracker.track_objects, fps, interval
     )
-    result = format_result(tracks, total_frames, fps, duration)
+    result = format_result(tracks, frames_saved, fps, frames_saved / fps)
     cap.release()
 
     summary_prompt = build_summary_prompt(tracks)
@@ -89,7 +100,7 @@ async def process_video(file, video_id):
         embedding = embedder.encode(summary)
         embedding_index.add(embedding[None, :])
         embedding_metadata.append({
-            "video": filename,
+            "video": video_filename,
             "summary": summary,
             "tracks": result["tracks"],
             "duration": result["summary"]["duration_seconds"],
@@ -102,7 +113,7 @@ async def process_video(file, video_id):
         "summary": result["summary"],
         "natural_language_summary": summary,
         "tracks": result["tracks"],
-        "file_path": filename,
+        "file_path": video_filename,
         "frames_dir": video_id,
     }
 

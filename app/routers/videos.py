@@ -12,13 +12,28 @@ from fastapi import Query
 
 @router.get("/frames/list", response_class=JSONResponse)
 def list_frames(video_id: str = Query(..., description="Unique video ID")):
-    """List all frame image filenames for a specific video in frames/{video_id}/."""
-    frames_base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'frames'))
-    frames_dir = os.path.join(frames_base, video_id)
-    if not os.path.exists(frames_dir):
+    """
+    Returns a list of frame image filenames for a specific video.
+    Looks in the 'frames/{video_id}/' folder and returns all .jpg files.
+    """
+    # Get the absolute path to the 'frames' directory
+    frames_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'frames'))
+    # Get the path to the specific video's frames folder
+    video_frames_folder = os.path.join(frames_folder, video_id)
+
+    # If the folder does not exist, return an empty list
+    if not os.path.exists(video_frames_folder):
         return []
-    files = sorted([f for f in os.listdir(frames_dir) if f.lower().endswith('.jpg')])
-    return files
+
+    # List all files in the folder that end with '.jpg' (case-insensitive)
+    frame_files = []
+    for filename in os.listdir(video_frames_folder):
+        if filename.lower().endswith('.jpg'):
+            frame_files.append(filename)
+
+    # Sort the filenames (optional, for consistent order)
+    frame_files.sort()
+    return frame_files
 
 @router.get("/list", response_class=JSONResponse)
 def list_videos():
