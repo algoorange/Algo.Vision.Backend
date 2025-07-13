@@ -172,7 +172,7 @@ async function loadChatHistory(videoId) {
       html += `<div class="message bot"><b>Video Summary:</b><br>${history.summary}</div>`;
     }
     history.messages.forEach(msg => {
-      if (msg && msg.role && msg.text) {
+      if (msg && msg.role && msg.text && msg.text !== history.summary) {
         html += `<div class="message ${msg.role}">${msg.text}</div>`;
       }
     });
@@ -210,26 +210,22 @@ async function sendMsg() {
   }
 
   try {
-    const response = await fetch("http://localhost:8000/query/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        question: message,
-        video_id: lastUploadedVideoId // Make sure this is set when a video is selected
-      })
+    // Send question to backend and get bot answer
+    const resp = await fetch('http://localhost:8000/query/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_id: lastUploadedVideoId, question: message })
     });
-
-    const result = await response.json();
-    chatMessages.innerHTML += `<div class="message bot">${result.answer}</div>`;
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-
-    // Save bot response to MongoDB
-    if (lastUploadedVideoId) {
-      await saveChatMessage(lastUploadedVideoId, "bot", result.answer);
+    const result = await resp.json();
+    if (result && result.answer) {
+      // Show bot answer in chat
+      chatMessages.innerHTML += `<div class="message bot">${result.answer}</div>`;
+      // Save bot answer to MongoDB (no summary)
+      await saveChatMessage(lastUploadedVideoId, "", "bot", result.answer);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
     }
-
   } catch (err) {
-    chatMessages.innerHTML += `<div class="message bot">❌ Error: Could not fetch response.</div>`;
+    chatMessages.innerHTML += '<div class="message bot">❌ Failed to get answer from server.</div>';
   }
 }
 
