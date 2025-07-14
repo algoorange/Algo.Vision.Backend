@@ -5,6 +5,7 @@ from app.utils.helpers import format_result, build_summary_prompt
 from app.utils.embeddings import embedder, embedding_index, embedding_metadata
 from app.services.summary_generate_by_llm import generate_summary
 from fastapi import UploadFile
+import uuid
 
 # --- MongoDB Setup ---
 from pymongo import MongoClient
@@ -50,7 +51,9 @@ async def process_video(file, video_id):
 
     # Save the uploaded video file with the video_id in its name
     video_filename = f"{video_id}_{file.filename}"
+
     video_path = os.path.join(UPLOAD_DIR, video_filename)
+
     with open(video_path, "wb") as video_file:
         video_file.write(await file.read())
     print(f"✅ Video saved at: {video_path}")
@@ -82,8 +85,8 @@ async def process_video(file, video_id):
             _, annotated_frame = object_detector.detect_objects(frame_resized.copy())
 
             # Save the annotated frame as a JPEG
-            frame_filename = f"frame_{frame_number:06d}.jpg"
-            frame_path = os.path.join(frames_dir, frame_filename)
+            frames_id = f"{uuid.uuid4()}.jpg"
+            frame_path = os.path.join(frames_dir, frames_id)
             cv2.imwrite(frame_path, annotated_frame)
             frames_saved += 1
 
@@ -99,6 +102,7 @@ async def process_video(file, video_id):
         fps,
         interval,
         video_id=video_id,
+        frames_id=frames_id,
         video_name=video_filename,
         model_name="RTDETR"  # Change if you use a different model
     )
@@ -120,6 +124,7 @@ async def process_video(file, video_id):
             "tracks": result["tracks"],
             "duration": result["summary"]["duration_seconds"],
             "video_id": video_id,
+            "frames_id": frames_id,
         })
     print("🎉 Video processing complete")
 
@@ -133,7 +138,7 @@ async def process_video(file, video_id):
     }
 
 
-def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, video_name=None, model_name="RTDETR"):
+def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, video_name=None, frames_id=None, model_name="RTDETR"):
     """
     Processes video frames, runs detection and tracking, and saves results to MongoDB.
     Args:
@@ -143,6 +148,7 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
         fps: frames per second of the video
         interval: frame interval for processing
         video_id: unique id for the video
+        frames_id: unique id for the frames
         video_name: name of the video file
         model_name: name of the detection model
     """
@@ -153,39 +159,28 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
         ret = cap.grab()
         if not ret:
             break
-        # Only process frames at the specified interval to reduce computation and avoid redundant processing.
         if frame_id % interval == 0:
-            # Retrieve the current frame from the video capture buffer.
             ret, frame = cap.retrieve()
-            # If the frame could not be retrieved (e.g., end of video), exit the loop.
             if not ret:
                 break
-            # Run the detection function on the current frame to get detected objects.
             detections, _ = detect_fn(frame)
-            # Run the tracking function to associate detections with existing tracks.
             tracks = track_fn(frame, detections)
-            # Debug: Print all tracks found in the current frame for inspection.
+
             print(f"[DEBUG] Tracks at frame {frame_id}: {tracks}")
-            # Iterate over each track to process further.
             for t in tracks:
-                # Debug: Print details of the current track.
                 print(f"[DEBUG] Track: {t}")
-                # Skip tracks that are not confirmed (e.g., not yet stable or reliable).
                 if not t.is_confirmed():
                     print("[DEBUG] Track not confirmed, skipping.")
                     continue
-                # Get the bounding box of the track in left-top-right-bottom format.
                 bbox = t.to_ltrb()
-                # Calculate the center point of the bounding box for tracking or visualization.
                 center = ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
-                # Retrieve the unique track ID for identification and association.
                 tid = t.track_id
                 # --- MongoDB Insert: Save detection info for each confirmed object ---
                 # Build a document for MongoDB
                 doc = {
                     "video_id": video_id,
                     "video_name": os.path.splitext(video_name.split("_", 1)[1])[0],
-                    "frame_id": frame_id,
+                    "frames_id": os.path.splitext(frames_id)[0],
                     "track_id": tid,
                     "frame_time": round(frame_id / fps, 2),
                     "model_name": model_name,

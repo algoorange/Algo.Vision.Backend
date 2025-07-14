@@ -110,14 +110,6 @@ def get_main_direction(dx, dy):
     else:
         return "North" if dy > 0 else "South"
 
-    # return (
-    #     "You are a helpful assistant summarizing object movement in a video.\n"
-    #     f"Only include insights about the top {max_objects} moving objects.\n"
-    #     "Tracking Data:\n"
-    #     + "\n".join(object_lines)
-    #     + "\nProvide a concise summary of the objects' movements in the video."
-    # )
-
 
 
 
