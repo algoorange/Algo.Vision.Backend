@@ -20,7 +20,7 @@ def detect_objects(frame):
         cls_id = int(box.cls)
         label = yolo_model.names[cls_id]
         conf = float(box.conf)
-        if conf >= 0.7:
+        if conf >= 0.70:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             detections.append({
                 "label": label,
@@ -37,7 +37,7 @@ def detect_objects(frame):
         cls_id = int(box.cls)
         label = rtdetr_model.names[cls_id]
         conf = float(box.conf)
-        if conf >= 0.7:
+        if conf >= 0.60:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             detections2.append({
                 "label": label,

@@ -15,6 +15,7 @@ router = APIRouter()
 client = MongoClient("mongodb://localhost:27017/")
 db = client["algo_compliance_db_2"]  # Your database name
 chat_collection = db["user_chat_history"]  # Your collection name
+video_details_collection = db["video_details"]  # Your collection name
 
 @router.get("/frames/list", response_class=JSONResponse)
 def list_frames(video_id: str = Query(..., description="Unique video ID")):
@@ -92,4 +93,19 @@ def fetch_user_chat_history(video_id: str = Query(..., description="Unique video
     else:
         print("No chat history found for video_id:", video_id)
         return {"messages": []}
+
+
+@router.get("/latest_frame_id", response_class=JSONResponse)
+def fetch_latest_frame_id(video_id: str = Query(..., description="Unique video ID")):
+    """
+    Fetch the latest frame ID for a specific video.
+    Returns the latest frame ID as a string.
+    """
+    doc = video_details_collection.find_one({"video_id": video_id}, {"_id": 0})  # Exclude MongoDB's _id
+    if doc:
+        print("Found latest frame ID:", doc)
+        return doc
+    else:
+        print("No latest frame ID found for video_id:", video_id)
+        return {"latest_frame_id": None}
 
