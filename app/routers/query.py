@@ -18,10 +18,13 @@ async def query_llm(data: dict = Body(...)):
     combined_prompt = (
         f"User Question: {question}\n"
         f"Relevant Video Summary: {semantic_result['answer']}\n"
-        "Give a clear and concise answer using the video information above."
+        "Give a clear and concise answer using the semantic search result above."
     )
 
-    llm_response = await query_engine.query_ollama(combined_prompt)
+    #llm_response = await query_engine.query_ollama(combined_prompt)
+    #use GROQ model here 
+    llm_response = await query_engine.check_with_groq(combined_prompt, model="llama-3.1-8b-instant")
+
 
     return {
         "answer": llm_response,

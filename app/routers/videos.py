@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from pymongo import MongoClient
 from fastapi import Body, Query
+from typing import Optional
 
 UPLOAD_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..', 'uploads')
@@ -108,4 +109,6 @@ def fetch_latest_frame_id(video_id: str = Query(..., description="Unique video I
     else:
         print("No latest frame ID found for video_id:", video_id)
         return {"latest_frame_id": None}
+
+
 
