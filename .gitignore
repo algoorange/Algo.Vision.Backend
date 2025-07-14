@@ -17,6 +17,8 @@ yolov8l.pt
 yolov8x.pt
 result.json
 
+rtdetr-l.pt
+
 track_data/
 
 README.md

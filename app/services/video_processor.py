@@ -6,6 +6,14 @@ from app.utils.embeddings import embedder, embedding_index, embedding_metadata
 from app.services.summary_generate_by_llm import generate_summary
 from fastapi import UploadFile
 
+# --- MongoDB Setup ---
+from pymongo import MongoClient
+# Connect to MongoDB (make sure MongoDB is running on localhost:27017)
+mongo_client = MongoClient("mongodb://localhost:27017/")
+db = mongo_client["algo_compliance_db_2"]
+video_details_collection = db["video_details"]
+# --- End MongoDB Setup ---
+
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'uploads'))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 FRAMES_BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'frames'))
@@ -85,7 +93,14 @@ async def process_video(file, video_id):
     # Tracking and summary (on full video, not just extracted frames)
     cap = cv2.VideoCapture(video_path)
     tracks = build_tracking_data(
-        cap, object_detector.detect_objects, object_tracker.track_objects, fps, interval
+        cap,
+        object_detector.detect_objects,
+        object_tracker.track_objects,
+        fps,
+        interval,
+        video_id=video_id,
+        video_name=video_filename,
+        model_name="YOLOv8"  # Change if you use a different model
     )
     result = format_result(tracks, frames_saved, fps, frames_saved / fps)
     cap.release()
@@ -118,25 +133,67 @@ async def process_video(file, video_id):
     }
 
 
-def build_tracking_data(cap, detect_fn, track_fn, fps, interval):
+def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, video_name=None, model_name="RTDETR"):
+    """
+    Processes video frames, runs detection and tracking, and saves results to MongoDB.
+    Args:
+        cap: OpenCV video capture object
+        detect_fn: function to detect objects
+        track_fn: function to track objects
+        fps: frames per second of the video
+        interval: frame interval for processing
+        video_id: unique id for the video
+        video_name: name of the video file
+        model_name: name of the detection model
+    """
+    print(f"[DEBUG] build_tracking_data called with video_id={video_id}, video_name={video_name}, model_name={model_name}")
     frame_id = 0
     track_db = {}
     while True:
         ret = cap.grab()
         if not ret:
+            print(f"[DEBUG] cap.grab() returned False at frame {frame_id}")
             break
         if frame_id % interval == 0:
             ret, frame = cap.retrieve()
             if not ret:
+                print(f"[DEBUG] cap.retrieve() returned False at frame {frame_id}")
                 break
             detections, _ = detect_fn(frame)
+            print(f"[DEBUG] Detections at frame {frame_id}: {detections}")
             tracks = track_fn(frame, detections)
+            print(f"[DEBUG] Tracks at frame {frame_id}: {tracks}")
             for t in tracks:
+                print(f"[DEBUG] Track: {t}")
                 if not t.is_confirmed():
+                    print("[DEBUG] Track not confirmed, skipping.")
                     continue
                 bbox = t.to_ltrb()
                 center = ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
                 tid = t.track_id
+                # --- MongoDB Insert: Save detection info for each confirmed object ---
+                # Build a document for MongoDB
+                doc = {
+                    "video_id": video_id,
+                    "video_name": os.path.splitext(video_name.split("_", 1)[1])[0],
+                    "frame_id": frame_id,
+                    "frame_time": round(frame_id / fps, 2),
+                    "model_name": model_name,
+                    "detected_object": t.det_class,
+                    "position": {
+                        "x": int(bbox[0]),
+                        "y": int(bbox[1]),
+                        "x1": int(bbox[2]),
+                        "y1": int(bbox[3]),
+                    }
+                }
+                # Insert the document into MongoDB with error handling and debug print
+                try:
+                    video_details_collection.insert_one(doc)
+                    print(f"Inserted to MongoDB: {doc}")
+                except Exception as e:
+                    print(f"MongoDB insert error: {e}\nDoc: {doc}")
+                # --- End MongoDB Insert ---
                 if tid not in track_db:
                     track_db[tid] = {
                         "track_id": tid,
