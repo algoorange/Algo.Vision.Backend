@@ -52,9 +52,6 @@ def list_videos():
     return files
 
 
-from typing import Optional
-from fastapi import Body
-
 @router.post("/user_chat_history", response_class=JSONResponse)
 def save_user_chat_history(
     video_id: str = Body(...),

@@ -68,6 +68,7 @@ async def process_video(file, video_id):
 
     frame_number = 0  # Tracks the current frame number
     frames_saved = 0  # Counts how many frames we save
+    frameid_map = {}  # Map frame_number to frames_id
 
     while True:
         success, frame = cap.read()
@@ -91,6 +92,8 @@ async def process_video(file, video_id):
             frame_path = os.path.join(frames_dir, frames_id)
             cv2.imwrite(frame_path, annotated_frame)
             frames_saved += 1
+            # Map frame_number to frames_id (without extension)
+            frameid_map[frame_number] = frames_id
 
     cap.release()  # Release the video file
     print(f"✅ Extracted {frames_saved} frames to {frames_dir}")
@@ -104,7 +107,7 @@ async def process_video(file, video_id):
         fps,
         interval,
         video_id=video_id,
-        frames_id=frames_id,
+        frameid_map=frameid_map,
         video_name=video_filename,
         model_name="RTDETR"  # Change if you use a different model
     )
@@ -126,7 +129,7 @@ async def process_video(file, video_id):
             "tracks": result["tracks"],
             "duration": result["summary"]["duration_seconds"],
             "video_id": video_id,
-            "frames_id": frames_id,
+            "frames_id": frameid_map,
         })
     print("🎉 Video processing complete")
 
@@ -141,7 +144,7 @@ async def process_video(file, video_id):
     }
 
 
-def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, video_name=None, frames_id=None, model_name="RTDETR"):
+def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, video_name=None, frameid_map=None, model_name="RTDETR"):
     """
     Processes video frames, runs detection and tracking, and saves results to MongoDB.
     Args:
@@ -151,11 +154,10 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
         fps: frames per second of the video
         interval: frame interval for processing
         video_id: unique id for the video
-        frames_id: list of detected frame ids
+        frameid_map: dict mapping frame_number to frames_id string
         video_name: name of the video file
         model_name: name of the detection model
     """
-    print("[DEBUG] {frames_id}")
     print(f"[DEBUG] build_tracking_data called with video_id={video_id}, video_name={video_name}, model_name={model_name}")
     frame_number = 0
     track_db = {}
@@ -178,10 +180,16 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
                 center = ((bbox["x"] + bbox["x1"]) / 2, (bbox["y"] + bbox["y1"]) / 2)
                 tid = t["track_id"]
                 # --- MongoDB Insert: Save detection info for each object ---
+                cur_frames_id = None
+                if frameid_map is not None:
+                    cur_frames_id = frameid_map.get(frame_number, None)
+                if cur_frames_id is None:
+                    # fallback to empty string or legacy behavior
+                    cur_frames_id = ""
                 doc = {
                     "video_id": video_id,
                     "video_name": os.path.splitext(video_name.split("_", 1)[1])[0],
-                    "frames_id": os.path.splitext(frames_id)[0],
+                    "frames_id": os.path.splitext(cur_frames_id)[0],
                     "track_id": tid,
                     "frame_time": round(frame_number / fps, 2),
                     "model_name": model_name,
