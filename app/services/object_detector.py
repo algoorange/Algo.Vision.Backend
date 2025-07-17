@@ -49,6 +49,37 @@ DETECTION_CONFIG = {
     "prioritize_faster_rcnn": True  # If True, Faster R-CNN results come first
 }
 
+# --- Helper function for IOU ---
+def compute_iou(box1, box2):
+    """Compute Intersection over Union (IOU) for two bounding boxes."""
+    x1, y1, w1, h1 = box1
+    x2, y2, w2, h2 = box2
+    box1_x2, box1_y2 = x1 + w1, y1 + h1
+    box2_x2, box2_y2 = x2 + w2, y2 + h2
+    xi1, yi1 = max(x1, x2), max(y1, y2)
+    xi2, yi2 = min(box1_x2, box2_x2), min(box1_y2, box2_y2)
+    inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
+    box1_area = w1 * h1
+    box2_area = w2 * h2
+    union_area = box1_area + box2_area - inter_area
+    return inter_area / union_area if union_area != 0 else 0
+
+def merge_detections(detections, iou_threshold=0.5):
+    """Merge duplicate detections based on IOU and label."""
+    merged = []
+    for det in detections:
+        duplicate = False
+        for m in merged:
+            iou = compute_iou(det["bbox"], m["bbox"])
+            if iou > iou_threshold and det["label"] == m["label"]:
+                m["confidence"] = max(m["confidence"], det["confidence"])  # Take higher confidence
+                duplicate = True
+                break
+        if not duplicate:
+            merged.append(det)
+    return merged
+
+
 def detect_with_yolo(frame):
     """YOLOv8 detection"""
     detections = []
@@ -176,7 +207,8 @@ def detect_objects(frame):
         cv2.putText(annotated_frame, f"{source}: {label} {conf:.2f}", (x, y - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-    return all_detections, annotated_frame
+    merged_detections = merge_detections(all_detections)                
+    return merged_detections, annotated_frame
 
 def set_detection_config(**kwargs):
     """Update detection configuration"""

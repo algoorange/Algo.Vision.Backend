@@ -6,6 +6,7 @@ from app.utils.embeddings import embedder, embedding_index, embedding_metadata
 from app.services.summary_generate_by_llm import generate_summary
 from fastapi import UploadFile
 import uuid
+from app.services.object_tracker import track_objects
 
 # --- MongoDB Setup ---
 from pymongo import MongoClient
@@ -83,7 +84,8 @@ async def process_video(file, video_id):
 
             # Run object detection and get the annotated frame and detected objects
             detected_objects, annotated_frame = object_detector.detect_objects(frame_resized.copy())
-
+            # Get unique object count
+            track_objects(frame_resized.copy(), detected_objects)
             # Save the annotated frame as a JPEG
             frames_id = f"{uuid.uuid4()}.jpg"
             frame_path = os.path.join(frames_dir, frames_id)
@@ -155,43 +157,42 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
     """
     print("[DEBUG] {frames_id}")
     print(f"[DEBUG] build_tracking_data called with video_id={video_id}, video_name={video_name}, model_name={model_name}")
-    frame_id = 0
+    frame_number = 0
     track_db = {}
     while True:
         ret = cap.grab()
         if not ret:
             break
-        if frame_id % interval == 0:
+        if frame_number % interval == 0:
             ret, frame = cap.retrieve()
             if not ret:
                 break
             detections, _ = detect_fn(frame)
             tracks = track_fn(frame, detections)
 
-            print(f"[DEBUG] Tracks at frame {frame_id}: {tracks}")
+            print(f"[DEBUG] Tracks at frame {frame_number}: {tracks}")
             for t in tracks:
                 print(f"[DEBUG] Track: {t}")
-                if not t.is_confirmed():
-                    print("[DEBUG] Track not confirmed, skipping.")
-                    continue
-                bbox = t.to_ltrb()
-                center = ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
-                tid = t.track_id
-                # --- MongoDB Insert: Save detection info for each confirmed object ---
-                # Build a document for MongoDB
+                # t is now a dict with keys: object_type, position, track_id, confidence
+                bbox = t["position"]
+                center = ((bbox["x"] + bbox["x1"]) / 2, (bbox["y"] + bbox["y1"]) / 2)
+                tid = t["track_id"]
+                # --- MongoDB Insert: Save detection info for each object ---
                 doc = {
                     "video_id": video_id,
                     "video_name": os.path.splitext(video_name.split("_", 1)[1])[0],
                     "frames_id": os.path.splitext(frames_id)[0],
                     "track_id": tid,
-                    "frame_time": round(frame_id / fps, 2),
+                    "frame_time": round(frame_number / fps, 2),
                     "model_name": model_name,
-                    "detected_object": t.det_class,
+                    "frame": frame_number,
+                    "detected_object": t["object_type"],
+                    "confidence": t["confidence"],
                     "position": {
-                        "x": int(bbox[0]),
-                        "y": int(bbox[1]),
-                        "x1": int(bbox[2]),
-                        "y1": int(bbox[3]),
+                        "x": int(bbox["x"]),
+                        "y": int(bbox["y"]),
+                        "x1": int(bbox["x1"]),
+                        "y1": int(bbox["y1"]),
                     }
                 }
                 # Insert the document into MongoDB with error handling and debug print
@@ -204,14 +205,14 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
                 if tid not in track_db:
                     track_db[tid] = {
                         "track_id": tid,
-                        "label": t.det_class,
+                        "label": t["object_type"],
                         "trajectory": [],
                         "timestamps": [],
                         "frames": []
                     }
                 track_db[tid]["trajectory"].append(center)
-                track_db[tid]["timestamps"].append(round(frame_id / fps, 2))
-                track_db[tid]["frames"].append(frame_id)
-        frame_id += 1
-    print(f"✅ Processed {frame_id} frames, {len(track_db)} tracks")
+                track_db[tid]["timestamps"].append(round(frame_number / fps, 2))
+                track_db[tid]["frames"].append(frame_number)
+        frame_number += 1
+    print(f"✅ Processed {frame_number} frames, {len(track_db)} tracks")
     return list(track_db.values())
