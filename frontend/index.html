@@ -35,15 +35,12 @@
   <!-- Top menu bar using Bootstrap flex utilities -->
   <div class="menu-bar d-flex align-items-center gap-3 px-3 py-2 shadow">
     <button type="button" class="btn btn-primary" onclick="viewAction()">View</button>
-    <label for="videoFile" class="upload-btn btn btn-primary mb-0">Upload</label>
+    <button type="button" class="upload-btn btn btn-primary mb-0" data-bs-toggle="modal" data-bs-target="#uploadModal">Upload</button>
     <button type="button" class="btn btn-primary" onclick="toggleVideoDropdown()">Show Videos</button>
   </div> 
 
   <!-- File upload form with Bootstrap -->
-  <form id="uploadForm" class="d-flex align-items-center gap-2 px-3 py-2">
-    <input type="file" id="videoFile" accept="video/*" required hidden />
-    <button type="submit" class="btn btn-success">Submit Upload</button>
-  </form> 
+  
 
   <!-- Dropdown for videos -->
   <div id="videoDropdown" class="bg-dark text-light rounded shadow-sm p-3" style="display:none;">
@@ -64,9 +61,22 @@
         <!-- Frames Grid -->
         <div id="framesGrid" class="flex-grow-1"> </div>
       </div>
-      <div id="frameModal" class="modal" style="display:none;">
-        <span class="modal-close" id="closeModalBtn">&times;</span>
-        <img class="modal-content" id="modalImg" />
+      <div id="frameModal" class="modal">
+        <div class="modal-container">
+          <!-- Left: Enlarged Frame -->
+          <div class="modal-left">
+            <img class="modal-frame-img" id="modalImg" />
+          </div>
+      
+          <!-- Right: Frame Details -->
+          <div class="modal-right">
+            <h3 class="details-title">Frame Details</h3>
+            <pre id="frameDetails" class="details-content"></pre>
+          </div>
+      
+          <!-- Close Button -->
+          <span class="modal-close" id="closeModalBtn">&times;</span>
+        </div>
       </div>
       <!-- Chat section, flush right, always full height, responsive -->
       <div class="chat-section">
@@ -82,7 +92,27 @@
     </div>
   </div> 
 
+    <!-- Upload Modal -->
+    <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+          <div class="modal-header border-0">
+            <h5 class="modal-title text-light" id="uploadModalLabel">Upload Video</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <form id="uploadForm" class="d-flex flex-column gap-3">
+              <input type="file" id="videoFile" accept="video/*" required class="form-control bg-dark text-light border-secondary" />
+              <button type="submit" class="btn btn-success">Submit Upload</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+
   <script>
+
 // Global variable to track the currently selected or uploaded video
 let lastUploadedVideoId = null;
 
@@ -143,6 +173,7 @@ uploadForm.addEventListener("submit", async (e) => {
         });
         const result = await response.json();
         console.log(result);
+        console.log(result.summary.frame_id);
         document.getElementById("loaderContainer").style.display = "none";
         lastUploadedVideoId = result.video_id;
 
@@ -159,6 +190,7 @@ uploadForm.addEventListener("submit", async (e) => {
                 Total Frames: ${result.summary.total_frames}, 
                 FPS: ${result.summary.fps}, 
                 Duration: ${result.summary.duration_seconds},
+                frame_id: ${result.summary.frame_id},
                 Cracks Detected: ${result.summary.crack_count}
             </div>
         `;
@@ -166,6 +198,15 @@ uploadForm.addEventListener("submit", async (e) => {
 
         // Store the summary in MongoDB for this video
         const summaryText = `${result.natural_language_summary}\nDetails: Total Frames: ${result.summary.total_frames}, FPS: ${result.summary.fps}, Duration: ${result.summary.duration_seconds}, Cracks Detected: ${result.summary.crack_count}`;
+
+        // Hide the upload modal after successful upload
+        const uploadModalEl = document.getElementById('uploadModal');
+        if (uploadModalEl) {
+          const modal = bootstrap.Modal.getInstance(uploadModalEl);
+          if (modal) {
+            modal.hide();
+          }
+        }
         await saveChatMessage(result.video_id, summaryText, "bot", summaryText);
 
     } catch (err) {
@@ -288,7 +329,9 @@ async function loadFramesGrid(videoId = null) {
   try {
     // Fetch the list of frames from the backend
     const response = await fetch(apiUrl);
+    console.log('response : ', response);
     const frames = await response.json();
+    console.log('frames : ', frames);
 
     // If there are no frames, show a message
     if (!frames.length) {
@@ -309,7 +352,9 @@ async function loadFramesGrid(videoId = null) {
         <div class="frame-label">Frame ${idx + 1}</div>
       `;
       grid.appendChild(frameBox);
+      console.log('frameBox : ', frameBox);
     });
+    console.log('grid : ', grid);
     // Make frames enlargeable after loading
     if (window.makeFramesEnlargeable) makeFramesEnlargeable();
   } catch (error) {
@@ -340,18 +385,39 @@ async function loadFramesGrid(videoId = null) {
     window.makeFramesEnlargeable = function() {
       document.querySelectorAll('.frame-img').forEach(img => {
         img.style.cursor = 'pointer';
-        img.onclick = () => {
+        img.onclick = async () => {
           modalImg.src = img.src;
           modal.style.display = 'block';
+
+          const parts = img.src.split('/');
+          const frameFileName = parts[parts.length - 1];
+
+          // Send videoId and frameFileName to backend
+          try {
+            console.log("Sending Frame ID and Video ID to backend...");
+            console.log("Video ID:", lastUploadedVideoId);
+            console.log("Frame Filename:", frameFileName);
+
+            const response = await fetch(`http://localhost:8000/videos/frame_details?video_id=${encodeURIComponent(lastUploadedVideoId)}&frame_id=${encodeURIComponent(frameFileName)}`);
+            const details = await response.json();
+            console.log("Frame details response:", details);
+
+            // Display details in modal if needed
+            const detailsDiv = document.getElementById('frameDetails');
+            detailsDiv.textContent = JSON.stringify(details, null, 2);
+
+          } catch (error) {
+            console.error("Error fetching frame details:", error);
+          }
         };
       });
     };
   });
+
   </script>
-  <!-- Modal for Enlarged Frame -->
-  <div id="frameModal" class="modal" style="display:none;">
-    <span class="modal-close" id="closeModalBtn">&times;</span>
-    <img class="modal-content" id="modalImg" />
-  </div>
+
+
+  <!-- Bootstrap JS Bundle (with Popper) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

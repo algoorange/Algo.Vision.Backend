@@ -66,7 +66,7 @@ async def process_video(file, video_id):
     interval = int(fps * 5)  # Extract one frame every 5 seconds
 
     frame_number = 0  # Tracks the current frame number
-    frames_saved = 0  # Counts how many frames we saved
+    frames_saved = 0  # Counts how many frames we save
 
     while True:
         success, frame = cap.read()
@@ -81,8 +81,8 @@ async def process_video(file, video_id):
             new_height = int(frame.shape[0] * scale)
             frame_resized = cv2.resize(frame, (640, new_height))
 
-            # Run object detection and get the annotated frame
-            _, annotated_frame = object_detector.detect_objects(frame_resized.copy())
+            # Run object detection and get the annotated frame and detected objects
+            detected_objects, annotated_frame = object_detector.detect_objects(frame_resized.copy())
 
             # Save the annotated frame as a JPEG
             frames_id = f"{uuid.uuid4()}.jpg"
@@ -133,6 +133,7 @@ async def process_video(file, video_id):
         "summary": result["summary"],
         "natural_language_summary": summary,
         "tracks": result["tracks"],
+        "frames_file_name": os.path.splitext(frames_id)[0],
         "file_path": video_filename,
         "frames_dir": video_id,
     }
@@ -148,10 +149,11 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
         fps: frames per second of the video
         interval: frame interval for processing
         video_id: unique id for the video
-        frames_id: unique id for the frames
+        frames_id: list of detected frame ids
         video_name: name of the video file
         model_name: name of the detection model
     """
+    print("[DEBUG] {frames_id}")
     print(f"[DEBUG] build_tracking_data called with video_id={video_id}, video_name={video_name}, model_name={model_name}")
     frame_id = 0
     track_db = {}

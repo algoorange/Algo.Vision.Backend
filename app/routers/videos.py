@@ -96,19 +96,22 @@ def fetch_user_chat_history(video_id: str = Query(..., description="Unique video
         return {"messages": []}
 
 
-@router.get("/latest_frame_id", response_class=JSONResponse)
-def fetch_latest_frame_id(video_id: str = Query(..., description="Unique video ID")):
-    """
-    Fetch the latest frame ID for a specific video.
-    Returns the latest frame ID as a string.
-    """
-    doc = video_details_collection.find_one({"video_id": video_id}, {"_id": 0})  # Exclude MongoDB's _id
-    if doc:
-        print("Found latest frame ID:", doc)
-        return doc
-    else:
-        print("No latest frame ID found for video_id:", video_id)
-        return {"latest_frame_id": None}
+@router.get("/frame_details", response_class=JSONResponse)
+def get_frame_details(
+    video_id: str = Query(...),
+    frame_id: str = Query(...)
+):
+    frame_id_split = frame_id.split('.')[0]
+    docs = video_details_collection.find(
+        {"video_id": video_id, "frames_id": frame_id_split},
+        {"_id": 0}
+    )
+    docs_list = []
+    for doc in docs:
+        docs_list.append(doc)
+    if docs_list:
+        return docs_list
+    return {"error": "Frame not found"}
 
 
 
