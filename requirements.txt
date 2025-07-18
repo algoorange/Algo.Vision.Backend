@@ -35,6 +35,7 @@ sentence-transformers
 
 # store video in vector database
 faiss-cpu
+chromadb
 
 # model for generate the summary of the video
 groq

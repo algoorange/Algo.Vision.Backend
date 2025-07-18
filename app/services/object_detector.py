@@ -8,7 +8,7 @@ import torchvision
 # from app.services.crack_detector import predict_crack
 
 # Load YOLOv8 model
-yolo_model = YOLO("yolov8x.pt")
+yolo_model = YOLO("yolov8n.pt")
 
 # Load Faster R-CNN model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -44,7 +44,7 @@ DETECTION_CONFIG = {
     "use_rtdetr": True,
     "use_faster_rcnn": True,
     "yolo_threshold": 0.70,
-    "rtdetr_threshold": 0.60,
+    "rtdetr_threshold": 0.70,
     "faster_rcnn_threshold": 0.70,
     "prioritize_faster_rcnn": True  # If True, Faster R-CNN results come first
 }
@@ -64,7 +64,7 @@ def compute_iou(box1, box2):
     union_area = box1_area + box2_area - inter_area
     return inter_area / union_area if union_area != 0 else 0
 
-def merge_detections(detections, iou_threshold=0.5):
+def merge_detections(detections, iou_threshold=0.7):
     """Merge duplicate detections based on IOU and label."""
     merged = []
     for det in detections:

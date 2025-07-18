@@ -64,7 +64,7 @@ async def process_video(file, video_id):
     fps = cap.get(cv2.CAP_PROP_FPS)
     if not fps or fps <= 0:
         fps = 1  # Prevent division by zero
-    interval = int(fps * 5)  # Extract one frame every 5 seconds
+    interval = int(fps * 2)  # Extract one frame every 2 seconds
 
     frame_number = 0  # Tracks the current frame number
     frames_saved = 0  # Counts how many frames we save
@@ -173,12 +173,12 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
             tracks = track_fn(frame, detections)
 
             print(f"[DEBUG] Tracks at frame {frame_number}: {tracks}")
-            for t in tracks:
-                print(f"[DEBUG] Track: {t}")
+            for tracked_object in tracks:
+                print(f"[DEBUG] Track: {tracked_object}")
                 # t is now a dict with keys: object_type, position, track_id, confidence
-                bbox = t["position"]
+                bbox = tracked_object["position"]
                 center = ((bbox["x"] + bbox["x1"]) / 2, (bbox["y"] + bbox["y1"]) / 2)
-                tid = t["track_id"]
+                track_id = tracked_object["track_id"]
                 # --- MongoDB Insert: Save detection info for each object ---
                 cur_frames_id = None
                 if frameid_map is not None:
@@ -190,12 +190,12 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
                     "video_id": video_id,
                     "video_name": os.path.splitext(video_name.split("_", 1)[1])[0],
                     "frames_id": os.path.splitext(cur_frames_id)[0],
-                    "track_id": tid,
+                    "track_id": track_id,
                     "frame_time": round(frame_number / fps, 2),
                     "model_name": model_name,
                     "frame": frame_number,
-                    "detected_object": t["object_type"],
-                    "confidence": t["confidence"],
+                    "detected_object": tracked_object["object_type"],
+                    "confidence": tracked_object["confidence"],
                     "position": {
                         "x": int(bbox["x"]),
                         "y": int(bbox["y"]),
@@ -210,17 +210,17 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
                 except Exception as e:
                     print(f"MongoDB insert error: {e}\nDoc: {doc}")
                 # --- End MongoDB Insert ---
-                if tid not in track_db:
-                    track_db[tid] = {
-                        "track_id": tid,
-                        "label": t["object_type"],
+                if track_id not in track_db:
+                    track_db[track_id] = {
+                        "track_id": track_id,
+                        "label": tracked_object["object_type"],
                         "trajectory": [],
                         "timestamps": [],
                         "frames": []
                     }
-                track_db[tid]["trajectory"].append(center)
-                track_db[tid]["timestamps"].append(round(frame_number / fps, 2))
-                track_db[tid]["frames"].append(frame_number)
+                track_db[track_id]["trajectory"].append(center)
+                track_db[track_id]["timestamps"].append(round(frame_number / fps, 2))
+                track_db[track_id]["frames"].append(frame_number)
         frame_number += 1
     print(f"✅ Processed {frame_number} frames, {len(track_db)} tracks")
     return list(track_db.values())
