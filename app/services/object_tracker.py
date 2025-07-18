@@ -3,7 +3,7 @@ from deep_sort_realtime.deepsort_tracker import DeepSort
 import math
 
 # Create tracker instance
-tracker = DeepSort(max_age=50, n_init=3, max_iou_distance=0.7)
+tracker = DeepSort(max_age=50, n_init=1, max_iou_distance=0.7)  # Lowered n_init for faster confirmation
 
 def track_objects(frame, detections):
     """
@@ -30,21 +30,23 @@ def track_objects(frame, detections):
             "label": det["label"],
             "confidence": det["confidence"]
         }
+        print('detection_map', detection_map)
 
     # Update tracker
     tracks = tracker.update_tracks(formatted, frame=frame)
 
     # Prepare output: for each active track, report its info
     output_tracks = []
-    for tracked_data in tracks:
-        if not tracked_data.is_confirmed():
+    for track_object in tracks:
+        print(f"Track ID: {track_object.track_id}, Confirmed: {track_object.is_confirmed()}, State: {getattr(track_object, 'state', None)}")  # Debug info
+        if not track_object.is_confirmed():
             continue
-        bbox = tracked_data.to_ltrb()  # [x1, y1, x2, y2]
+        bbox = track_object.to_ltrb()  # [x1, y1, x2, y2]
         # Attempt to get label/confidence from detection_map by bbox
-        det_label = getattr(tracked_data, 'det_class', None)
-        det_conf = getattr(tracked_data, 'det_conf', None)
+        det_label = getattr(track_object, 'det_class', None)
+        det_conf = getattr(track_object, 'det_conf', None)
         # If tracker supports custom fields, update them
-        if hasattr(tracked_data, 'det_class') and hasattr(tracked_data, 'det_conf'):
+        if hasattr(track_object, 'det_class') and hasattr(track_object, 'det_conf'):
             pass  # already set by DeepSort
         else:
             # Try to match with detection map (by bbox)
@@ -63,7 +65,7 @@ def track_objects(frame, detections):
                 "x1": int(bbox[2]),
                 "y1": int(bbox[3])
             },
-            "track_id": tracked_data.track_id,
+            "track_id": track_object.track_id,
             "confidence": float(det_conf) if det_conf is not None else 0.0
         })
     return output_tracks
