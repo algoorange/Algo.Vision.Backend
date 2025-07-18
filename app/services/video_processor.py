@@ -172,9 +172,7 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
             detections, _ = detect_fn(frame)
             tracks = track_fn(frame, detections)
 
-            print(f"[DEBUG] Tracks at frame {frame_number}: {tracks}")
             for tracked_object in tracks:
-                print(f"[DEBUG] Track: {tracked_object}")
                 # t is now a dict with keys: object_type, position, track_id, confidence
                 bbox = tracked_object["position"]
                 center = ((bbox["x"] + bbox["x1"]) / 2, (bbox["y"] + bbox["y1"]) / 2)
@@ -206,9 +204,8 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
                 # Insert the document into MongoDB with error handling and debug print
                 try:
                     video_details_collection.insert_one(doc)
-                    print(f"Inserted to MongoDB: {doc}")
                 except Exception as e:
-                    print(f"MongoDB insert error: {e}\nDoc: {doc}")
+                    pass
                 # --- End MongoDB Insert ---
                 if track_id not in track_db:
                     track_db[track_id] = {

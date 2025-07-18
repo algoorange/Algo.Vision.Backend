@@ -198,7 +198,6 @@ def detect_objects(frame):
             color = (0, 255, 255)  # Yellow
         else:  # YOLOv8
             color = (0, 255, 0)  # Green
-            
         # Special color for trucks
         if label == "truck":
             color = (0, 255, 255)  # Yellow for trucks
