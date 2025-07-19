@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  algovision:
+    build:
+      context: .
+      dockerfile: Dockerfile.lite
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/workspace/uploads
+      - ./frames:/workspace/frames
+      - ./outputs:/workspace/outputs
+      - ./inputs:/workspace/inputs
+    environment:
+      - PYTHONPATH=/workspace
+    restart: unless-stopped 

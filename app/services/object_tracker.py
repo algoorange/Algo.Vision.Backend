@@ -1,9 +1,14 @@
-from deep_sort_realtime.deepsort_tracker import DeepSort
+try:
+    from deep_sort_realtime import DeepSort
+    tracker = DeepSort(max_age=50, n_init=3, max_iou_distance=0.7)
+    TRACKER_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: DeepSort tracker not available: {e}")
+    print("Falling back to simple tracking...")
+    tracker = None
+    TRACKER_AVAILABLE = False
 
 import math
-
-# Create tracker instance
-tracker = DeepSort(max_age=50, n_init=3, max_iou_distance=0.7)
 
 def track_objects(frame, detections):
     """
@@ -16,6 +21,26 @@ def track_objects(frame, detections):
         'confidence': <confidence>
     }
     """
+    if not TRACKER_AVAILABLE or tracker is None:
+        # Simple fallback: assign sequential IDs without actual tracking
+        output_tracks = []
+        for i, det in enumerate(detections):
+            x, y, w, h = det["bbox"]
+            x1, y1, x2, y2 = x, y, x + w, y + h
+            output_tracks.append({
+                "object_type": det["label"],
+                "position": {
+                    "x": int(x1),
+                    "y": int(y1),
+                    "x1": int(x2),
+                    "y1": int(y2)
+                },
+                "track_id": i,  # Simple sequential ID
+                "confidence": float(det["confidence"])
+            })
+        return output_tracks
+
+    # Normal tracking with DeepSort
     formatted = []
     detection_map = {}
     for det in detections:

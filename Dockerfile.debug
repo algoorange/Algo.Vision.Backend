@@ -1,0 +1,37 @@
+# Debug Dockerfile with remote debugging support
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /workspace
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python packages
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install debugging tools
+RUN pip install debugpy
+
+# Copy application code
+COPY . .
+
+# Create directories
+RUN mkdir -p frames uploads outputs inputs logs
+
+# Set environment
+ENV PYTHONPATH=/workspace
+
+# Expose ports (8000 for API, 5678 for debugger)
+EXPOSE 8000 5678
+
+# Start with debugger but don't wait for client (fix frozen modules issue)
+CMD ["python", "-Xfrozen_modules=off", "-m", "debugpy", "--listen", "0.0.0.0:5678", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"] 

@@ -3,45 +3,60 @@ fastapi>=0.110.0
 uvicorn>=0.27.1
 python-multipart>=0.0.9
 
-# Computer Vision open cv for image processing
+# Computer Vision
 opencv-python>=4.11.0.86
 numpy>=1.24.0
 
-# Deep Learning ultralytics for YOLOv8
+# Deep Learning
 ultralytics>=8.0.0 # YOLOv8 for object detection
 torch>=2.0.0 # PyTorch for U-Net
 torchvision>=0.15.0 # PyTorch for U-Net
 
-# Object Tracking
-deep-sort-realtime>=1.3.2 # Object Tracking
+# Object Tracking (optional - will fall back to simple tracking if not available)
+deep-sort-realtime==1.3.2 # Object Tracking
 
 # NLP and Embeddings
 sentence-transformers>=2.2.2 # Generate the embeddings of the video
 spacy>=3.7.2
 
-
 # Vector Search
 faiss-cpu>=1.7.4
 
-# for http requests
+# HTTP requests
 httpx>=0.28.1
 
-# environment variables
+# Environment variables
 python-dotenv>=1.0.0
 tqdm>=4.66.1
 
-# generate the embeddings of the video
-sentence-transformers
+# Groq API for LLM summary generation
+groq>=0.8.0
 
-# store video in vector database
-faiss-cpu
-
-# model for generate the summary of the video
-groq
-
-# crack detection
-segmentation-models-pytorch
-scikit-image #For mask post-processing 
+# Crack detection
+segmentation-models-pytorch>=0.3.0
+scikit-image>=0.21.0 # For mask post-processing
 
 # MongoDB
 pymongo>=4.0.0
+
+# Pydantic for data validation
+pydantic>=2.0.0
+
+# WebSocket support for FastAPI
+websockets>=11.0.0
+
+# Additional utilities
+uuid
+
+# Note: DeepStream dependencies are only available in the GPU container
+# gi>=3.42.0
+# pyds  # DeepStream Python bindings
+# pygobject>=3.42.0
+
+# Note: GStreamer dependencies are only available in the GPU container
+# gstreamer1.0-dev
+# gstreamer1.0-plugins-base-dev
+# gstreamer1.0-plugins-good
+# gstreamer1.0-plugins-bad
+# gstreamer1.0-plugins-ugly
+# gstreamer1.0-libav

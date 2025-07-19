@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  algovision-debug:
+    build:
+      context: .
+      dockerfile: Dockerfile.debug
+    ports:
+      - "8000:8000"  # API port
+      - "5678:5678"  # Debugger port
+    volumes:
+      - ./uploads:/workspace/uploads
+      - ./frames:/workspace/frames
+      - ./outputs:/workspace/outputs
+      - ./inputs:/workspace/inputs
+      - ./app:/workspace/app  # Mount source code for live editing
+    environment:
+      - PYTHONPATH=/workspace
+    restart: unless-stopped 
