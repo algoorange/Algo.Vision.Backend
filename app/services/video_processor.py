@@ -1,5 +1,6 @@
 import os
 import cv2
+import numpy as np
 from app.services import object_detector, object_tracker
 from app.utils.helpers import format_result, build_summary_prompt
 from app.utils.embeddings import embedder, embedding_index, embedding_metadata
@@ -34,7 +35,7 @@ async def save_video(file: UploadFile, video_id: str) -> str:
     return path
 
 
-async def process_video(file, video_id):
+async def process_video(file, video_id, coords=None):
     """
     Processes a video file:
     - Runs object detection and tracking
@@ -49,6 +50,7 @@ async def process_video(file, video_id):
     # Create the frames directory for this video if it doesn't exist
     frames_dir = os.path.join(FRAMES_BASE_DIR, video_id)
     os.makedirs(frames_dir, exist_ok=True)
+    frames_id = ""
 
     # Save the uploaded video file with the video_id in its name
     video_filename = f"{video_id}_{file.filename}"
@@ -87,13 +89,49 @@ async def process_video(file, video_id):
             detected_objects, annotated_frame = object_detector.detect_objects(frame_resized.copy())
             # Get unique object count
             track_objects(frame_resized.copy(), detected_objects)
-            # Save the annotated frame as a JPEG
-            frames_id = f"{uuid.uuid4()}.jpg"
-            frame_path = os.path.join(frames_dir, frames_id)
-            cv2.imwrite(frame_path, annotated_frame)
-            frames_saved += 1
-            # Map frame_number to frames_id (without extension)
-            frameid_map[frame_number] = frames_id
+
+            # Helper: check if a point is inside a polygon
+            def is_point_in_polygon(x, y, polygon):
+                if not polygon or len(polygon) < 3:
+                    return True  # No zone: treat as always inside
+                poly = [(pt['x'], pt['y']) for pt in polygon]
+                n = len(poly)
+                inside = False
+                px, py = x, y
+                j = n - 1
+                for i in range(n):
+                    xi, yi = poly[i]
+                    xj, yj = poly[j]
+                    if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi):
+                        inside = not inside
+                    j = i
+                return inside
+
+            save_this_frame = True
+            if coords and len(coords) >= 3:
+                # Only save if at least one detected object is inside the zone
+                save_this_frame = False
+                for det in detected_objects:
+                    x, y, w, h = det["bbox"]
+                    center_x = x + w / 2
+                    center_y = y + h / 2
+                    if is_point_in_polygon(center_x, center_y, coords):
+                        save_this_frame = True
+                        break
+            # Overlay the marked polygon if present
+            if save_this_frame:
+                if coords and len(coords) >= 3:
+                    # Scale the coordinates according to resize ratio
+                    scale = 640 / frame.shape[1]
+                    scaled_pts = np.array([[int(pt['x'] * scale), int(pt['y'] * scale)] for pt in coords], np.int32)
+                    scaled_pts = scaled_pts.reshape((-1, 1, 2))
+                    cv2.polylines(annotated_frame, [scaled_pts], isClosed=True, color=(0, 0, 255), thickness=2)
+                frames_id = f"{uuid.uuid4()}.jpg"
+                frame_path = os.path.join(frames_dir, frames_id)
+                cv2.imwrite(frame_path, annotated_frame)
+                frames_saved += 1
+                # Map frame_number to frames_id (without extension)
+                frameid_map[frame_number] = frames_id
 
     cap.release()  # Release the video file
     print(f"✅ Extracted {frames_saved} frames to {frames_dir}")
@@ -107,9 +145,10 @@ async def process_video(file, video_id):
         fps,
         interval,
         video_id=video_id,
-        frameid_map=frameid_map,
         video_name=video_filename,
-        model_name="RTDETR"  # Change if you use a different model
+        frameid_map=frameid_map,
+        model_name="RTDETR",
+        zone_coords=coords  # Pass the restricted zone coordinates
     )
     result = format_result(tracks, frames_saved, fps, frames_saved / fps)
     cap.release()
@@ -138,15 +177,16 @@ async def process_video(file, video_id):
         "summary": result["summary"],
         "natural_language_summary": summary,
         "tracks": result["tracks"],
-        "frames_file_name": os.path.splitext(frames_id)[0],
+        "frames_file_name": os.path.splitext(frames_id)[0] if frames_id else "",
         "file_path": video_filename,
         "frames_dir": video_id,
     }
 
 
-def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, video_name=None, frameid_map=None, model_name="RTDETR"):
+def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, video_name=None, frameid_map=None, model_name="RTDETR", zone_coords=None):
     """
     Processes video frames, runs detection and tracking, and saves results to MongoDB.
+    If zone_coords is provided, only objects inside the polygon are detected/tracked.
     Args:
         cap: OpenCV video capture object
         detect_fn: function to detect objects
@@ -157,10 +197,29 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
         frameid_map: dict mapping frame_number to frames_id string
         video_name: name of the video file
         model_name: name of the detection model
+        zone_coords: list of {x, y} dicts defining the polygon (optional)
     """
-    print(f"[DEBUG] build_tracking_data called with video_id={video_id}, video_name={video_name}, model_name={model_name}")
+    print(f"[DEBUG] build_tracking_data called with video_id={video_id}, video_name={video_name}, model_name={model_name}, zone_coords={zone_coords}")
     frame_number = 0
     track_db = {}
+
+    def is_point_in_polygon(x, y, polygon):
+        """Check if a point (x, y) is inside a polygon (list of dicts with x, y)."""
+        if not polygon or len(polygon) < 3:
+            return True  # No zone: treat as always inside
+        poly = [(pt['x'], pt['y']) for pt in polygon]
+        n = len(poly)
+        inside = False
+        px, py = x, y
+        j = n - 1
+        for i in range(n):
+            xi, yi = poly[i]
+            xj, yj = poly[j]
+            if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi):
+                inside = not inside
+            j = i
+        return inside
+
     while True:
         ret = cap.grab()
         if not ret:
@@ -170,6 +229,16 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
             if not ret:
                 break
             detections, _ = detect_fn(frame)
+            # If zone_coords is provided, filter detections by center point in polygon
+            if zone_coords and len(zone_coords) >= 3:
+                filtered_detections = []
+                for det in detections:
+                    x, y, w, h = det["bbox"]
+                    center_x = x + w / 2
+                    center_y = y + h / 2
+                    if is_point_in_polygon(center_x, center_y, zone_coords):
+                        filtered_detections.append(det)
+                detections = filtered_detections
             tracks = track_fn(frame, detections)
 
             for tracked_object in tracks:
@@ -177,6 +246,8 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
                 bbox = tracked_object["position"]
                 center = ((bbox["x"] + bbox["x1"]) / 2, (bbox["y"] + bbox["y1"]) / 2)
                 track_id = tracked_object["track_id"]
+                if tracked_object["confidence"] == 0:
+                    continue
                 # --- MongoDB Insert: Save detection info for each object ---
                 cur_frames_id = None
                 if frameid_map is not None:

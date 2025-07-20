@@ -6,6 +6,7 @@ python-multipart>=0.0.9
 # Computer Vision open cv for image processing
 opencv-python>=4.11.0.86
 numpy>=1.24.0
+cython
 
 # Deep Learning ultralytics for YOLOv8
 ultralytics>=8.0.0 # YOLOv8 for object detection
@@ -14,6 +15,7 @@ torchvision>=0.15.0 # PyTorch for U-Net
 
 # Object Tracking
 deep-sort-realtime>=1.3.2 # Object Tracking
+torchaudio
 
 # NLP and Embeddings
 sentence-transformers>=2.2.2 # Generate the embeddings of the video
@@ -46,3 +48,4 @@ scikit-image #For mask post-processing
 
 # MongoDB
 pymongo>=4.0.0
+

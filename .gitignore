@@ -21,6 +21,9 @@ rtdetr-l.pt
 
 track_data/
 
-README.md
+*.md
 .env
 chroma_db
+
+ByteTrack
+yolox

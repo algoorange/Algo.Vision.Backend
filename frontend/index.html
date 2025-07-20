@@ -85,6 +85,27 @@
           <div class="modal-body">
             <form id="uploadForm" class="d-flex flex-column gap-3">
               <input type="file" id="videoFile" accept="video/*" required class="form-control bg-dark text-light border-secondary" />
+
+              <!-- videoPreviewContainer -->
+              <div id="videoPreviewContainer" style="display:none;" class="my-3 text-center">
+                <div style="position:relative; display:inline-block;">
+                  <video id="uploadPreviewVideo" width="640" height="360" style="max-width:100%; border-radius:8px; background:#222;" controls></video>
+                  <!-- Canvas for drawing restricted zone (hidden by default) -->
+                  <canvas id="zoneCanvas" width="640" height="360" style="display:none; position:absolute; left:0; top:0; pointer-events:auto; border-radius:8px;"></canvas>
+                </div>
+                <!-- Prompt for marking restricted zone -->
+                <div id="zonePrompt" style="display:none; margin-top:16px;">
+                  <div style="font-size:1.1em; margin-bottom:8px;">Do you want to mark the restricted zone?</div>
+                  <button type="button" id="zoneYesBtn" class="btn btn-primary btn-sm me-2">Yes</button>
+                  <button type="button" id="zoneNoBtn" class="btn btn-secondary btn-sm">No</button>
+                  <div id="zoneInstructions" style="display:none; margin-top:10px; font-size:0.97em; color:#0af;">
+                    <b>Draw the restricted area:</b> Click to add points. Double-click or click near the first point to finish. Use mouse/touch. You can redraw if needed.
+                    <button type="button" id="zoneClearBtn" class="btn btn-outline-warning btn-sm ms-2">Clear</button>
+                  </div>
+                </div>
+              </div>
+              <!-- Hidden input to store zone coordinates as JSON -->
+              <input type="hidden" id="zoneCoords" name="zoneCoords" />
               <button type="submit" class="btn btn-success">Submit Upload</button>
             </form>
           </div>
@@ -146,6 +167,11 @@ uploadForm.addEventListener("submit", async (e) => {
 
     const formData = new FormData();
     formData.append("file", file);
+    // Add zone coordinates if present
+    const zoneCoords = document.getElementById("zoneCoords").value;
+    if (zoneCoords && zoneCoords.length > 0) {
+        formData.append("zoneCoords", zoneCoords);
+    }
 
     try {
         document.getElementById("loaderContainer").style.display = "block";
@@ -155,7 +181,7 @@ uploadForm.addEventListener("submit", async (e) => {
         });
         const result = await response.json();
         console.log(result);
-        console.log(result.summary.frame_id);
+        console.log(result.summary && result.summary.frame_id ? result.summary.frame_id : "N/A");
         document.getElementById("loaderContainer").style.display = "none";
         lastUploadedVideoId = result.video_id;
 
@@ -169,11 +195,11 @@ uploadForm.addEventListener("submit", async (e) => {
                 <b>Video Summary:</b><br>
                 ${result.natural_language_summary}<br>
                 <b>Details:</b>
-                Total Frames: ${result.summary.total_frames}, 
-                FPS: ${result.summary.fps}, 
-                Duration: ${result.summary.duration_seconds},
-                frame_id: ${result.summary.frame_id},
-                Cracks Detected: ${result.summary.crack_count}
+                Total Frames: ${(result.summary && typeof result.summary.total_frames !== 'undefined') ? result.summary.total_frames : "N/A"}, 
+                FPS: ${(result.summary && typeof result.summary.fps !== 'undefined') ? result.summary.fps : "N/A"}, 
+                Duration: ${(result.summary && typeof result.summary.duration_seconds !== 'undefined') ? result.summary.duration_seconds : "N/A"},
+                frame_id: ${(result.summary && result.summary.frame_id) ? result.summary.frame_id : "N/A"},
+                Cracks Detected: ${(result.summary && typeof result.summary.crack_count !== 'undefined') ? result.summary.crack_count : "N/A"}
             </div>
         `;
         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -329,6 +355,8 @@ async function loadFramesGrid(videoId = null) {
       frameBox.className = 'frame-box';
 
       // Set the frame image and label
+      // Add cache-busting query param to force fresh image from server
+  const cacheBuster = `?t=${Date.now()}`;
       frameBox.innerHTML = `
         <img src="http://localhost:8000/frames/${chosenVideoId}/${filename}" class="frame-img" />
         <div class="frame-label">Frame ${idx + 1}</div>
@@ -396,6 +424,169 @@ async function loadFramesGrid(videoId = null) {
     };
   });
 
+
+
+
+    // Video preview logic for upload modal
+    const videoInput = document.getElementById('videoFile');
+    const videoPreviewContainer = document.getElementById('videoPreviewContainer');
+    const videoPreview = document.getElementById('uploadPreviewVideo')
+    let videoBlobUrl = null;
+
+    videoInput.addEventListener('change', function() {
+      const file = videoInput.files[0];
+      if (file && file.type.startsWith('video/')) {
+        if (videoBlobUrl) URL.revokeObjectURL(videoBlobUrl);
+        videoBlobUrl = URL.createObjectURL(file);
+        videoPreview.src = videoBlobUrl;
+        videoPreviewContainer.style.display = 'block';
+        videoPreview.load();
+        videoPreview.currentTime = 0;
+      } else {
+        videoPreviewContainer.style.display = 'none';
+        videoPreview.src = '';
+        if (videoBlobUrl) URL.revokeObjectURL(videoBlobUrl);
+        videoBlobUrl = null;
+      }
+    });
+
+    // === Simple Restricted Zone Drawing ===
+    // Get all needed elements
+    const zonePrompt = document.getElementById('zonePrompt');
+    const zoneYesBtn = document.getElementById('zoneYesBtn');
+    const zoneNoBtn = document.getElementById('zoneNoBtn');
+    const zoneInstructions = document.getElementById('zoneInstructions');
+    const zoneCanvas = document.getElementById('zoneCanvas');
+    const zoneCoordsInput = document.getElementById('zoneCoords');
+    const zoneClearBtn = document.getElementById('zoneClearBtn');
+
+    // This array will store the points you draw
+    let points = [];
+    let done = false;
+
+    // Show the prompt after a video is picked
+    videoInput.addEventListener('change', function() {
+      zonePrompt.style.display = videoInput.files[0] ? 'block' : 'none';
+      zoneInstructions.style.display = 'none';
+      zoneCanvas.style.display = 'none';
+      zoneCoordsInput.value = '';
+      points = [];
+      done = false;
+      drawZone();
+    });
+
+    // If user clicks Yes, show the canvas and instructions
+    zoneYesBtn.onclick = function() {
+      zoneCanvas.style.display = 'block';
+      zoneInstructions.style.display = 'block';
+      points = [];
+      done = false;
+      zoneCoordsInput.value = '';
+      drawZone();
+    };
+    // If user clicks No, hide everything
+    zoneNoBtn.onclick = function() {
+      zoneCanvas.style.display = 'none';
+      zoneInstructions.style.display = 'none';
+      zoneCoordsInput.value = '';
+      points = [];
+      done = false;
+      drawZone();
+    };
+    // Clear button lets you redraw
+    zoneClearBtn.onclick = function() {
+      points = [];
+      done = false;
+      zoneCoordsInput.value = '';
+      drawZone();
+    };
+
+    // When you click on the canvas, add a point
+    zoneCanvas.addEventListener('mousedown', function(e) {
+      if (done) return;
+      const rect = zoneCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      // If close to first point, finish polygon
+      if (points.length > 2) {
+        const dx = x - points[0].x;
+        const dy = y - points[0].y;
+        if (Math.sqrt(dx*dx + dy*dy) < 10) {
+          done = true;
+          zoneCoordsInput.value = JSON.stringify(points);
+          drawZone();
+          return;
+        }
+      }
+      points.push({x, y});
+      drawZone();
+    });
+    // Or double-click to finish
+    zoneCanvas.addEventListener('dblclick', function(e) {
+      if (points.length > 2) {
+        done = true;
+        zoneCoordsInput.value = JSON.stringify(points);
+        drawZone();
+      }
+    });
+
+    // Draw the zone and points (simple)
+    function drawZone() {
+      const ctx = zoneCanvas.getContext('2d');
+      ctx.clearRect(0, 0, zoneCanvas.width, zoneCanvas.height);
+      if (points.length === 0) return;
+      ctx.strokeStyle = '#00eaff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      if (done) ctx.closePath();
+      ctx.stroke();
+      // Draw each point as a yellow dot
+      for (const pt of points) {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 5, 0, 2*Math.PI);
+        ctx.fillStyle = '#ff0';
+        ctx.fill();
+        ctx.strokeStyle = '#333';
+        ctx.stroke();
+      }
+      // Make the first point green and bigger
+      if (points.length > 0) {
+        ctx.beginPath();
+        ctx.arc(points[0].x, points[0].y, 7, 0, 2*Math.PI);
+        ctx.strokeStyle = '#0f0';
+        ctx.stroke();
+      }
+    }
+
+    // On submit, make sure zone is finished if drawing
+    document.getElementById('uploadForm').addEventListener('submit', function(e) {
+      if (zoneCanvas.style.display === 'block' && !done) {
+        alert('Please finish marking the restricted zone or click No.');
+        e.preventDefault();
+      }
+    });
+    // === End Simple Restricted Zone Drawing ===
+  
+     
+    // Hide preview/reset when modal closes
+    const uploadModal = document.getElementById('uploadModal');
+    uploadModal.addEventListener('hidden.bs.modal', function() {
+      videoPreview.pause();
+      videoPreviewContainer.style.display = 'none';
+      videoPreview.src = '';
+      if (videoBlobUrl) URL.revokeObjectURL(videoBlobUrl);
+      videoBlobUrl = null;
+      videoInput.value = '';
+      zoneCanvas.style.display = 'none';
+      zoneCoordsInput.value = '';
+      done = false;
+      points = [];
+      drawZone();
+    });
   </script>
 
 
