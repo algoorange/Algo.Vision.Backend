@@ -93,6 +93,8 @@
                   <!-- Canvas for drawing restricted zone (hidden by default) -->
                   <canvas id="zoneCanvas" width="640" height="360" style="display:none; position:absolute; left:0; top:0; pointer-events:auto; border-radius:8px;"></canvas>
                 </div>
+                <!-- Show original video size info -->
+                <div id="videoSizeInfo" style="margin-bottom:8px; color:#0af;"></div>
                 <!-- Prompt for marking restricted zone -->
                 <div id="zonePrompt" style="display:none; margin-top:16px;">
                   <div style="font-size:1.1em; margin-bottom:8px;">Do you want to mark the restricted zone?</div>
@@ -106,6 +108,9 @@
               </div>
               <!-- Hidden input to store zone coordinates as JSON -->
               <input type="hidden" id="zoneCoords" name="zoneCoords" />
+              <!-- Hidden inputs for preview/canvas size -->
+              <input type="hidden" id="previewWidth" name="previewWidth" />
+              <input type="hidden" id="previewHeight" name="previewHeight" />
               <button type="submit" class="btn btn-success">Submit Upload</button>
             </form>
           </div>
@@ -159,6 +164,23 @@ let lastUploadedVideoId = null;
     const uploadForm = document.getElementById("uploadForm");
     const chatMessages = document.getElementById("chatMessages");
 
+    uploadForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const fileInput = document.getElementById("videoFile");
+        const file = fileInput.files[0];
+        if (!file) return alert("Please select a video file!");
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        // Show original video size in the modal when video is loaded
+const videoPreview = document.getElementById("uploadPreviewVideo");
+const videoSizeInfo = document.getElementById("videoSizeInfo");
+videoPreview.addEventListener('loadedmetadata', function() {
+  videoSizeInfo.textContent = `Original Video Size: ${videoPreview.videoWidth} x ${videoPreview.videoHeight}`;
+});
+
+const uploadForm = document.getElementById("uploadForm");
 uploadForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const fileInput = document.getElementById("videoFile");
@@ -167,10 +189,16 @@ uploadForm.addEventListener("submit", async (e) => {
 
     const formData = new FormData();
     formData.append("file", file);
-    // Add zone coordinates if present
-    const zoneCoords = document.getElementById("zoneCoords").value;
-    if (zoneCoords && zoneCoords.length > 0) {
-        formData.append("zoneCoords", zoneCoords);
+
+    // Always append previewWidth and previewHeight (canvas size)
+    const zoneCanvas = document.getElementById("zoneCanvas");
+    formData.append("previewWidth", zoneCanvas.width);
+    formData.append("previewHeight", zoneCanvas.height);
+
+    // Always send raw (unscaled) zone coordinates
+    const zoneCoordsInput = document.getElementById("zoneCoords");
+    if (zoneCoordsInput.value) {
+        formData.append("zoneCoords", zoneCoordsInput.value);
     }
 
     try {
@@ -180,8 +208,6 @@ uploadForm.addEventListener("submit", async (e) => {
             body: formData,
         });
         const result = await response.json();
-        console.log(result);
-        console.log(result.summary && result.summary.frame_id ? result.summary.frame_id : "N/A");
         document.getElementById("loaderContainer").style.display = "none";
         lastUploadedVideoId = result.video_id;
 
@@ -191,52 +217,55 @@ uploadForm.addEventListener("submit", async (e) => {
 
         // Add result summary to chat
         chatMessages.innerHTML += `
-            <div class="message bot">
-                <b>Video Summary:</b><br>
-                ${result.natural_language_summary}<br>
-                <b>Details:</b>
-                Total Frames: ${(result.summary && typeof result.summary.total_frames !== 'undefined') ? result.summary.total_frames : "N/A"}, 
-                FPS: ${(result.summary && typeof result.summary.fps !== 'undefined') ? result.summary.fps : "N/A"}, 
-                Duration: ${(result.summary && typeof result.summary.duration_seconds !== 'undefined') ? result.summary.duration_seconds : "N/A"},
-                frame_id: ${(result.summary && result.summary.frame_id) ? result.summary.frame_id : "N/A"},
-                Cracks Detected: ${(result.summary && typeof result.summary.crack_count !== 'undefined') ? result.summary.crack_count : "N/A"}
-            </div>
+          <div class="message bot">
+            <b>Video Summary:</b><br>
+            ${result.natural_language_summary}<br>
+            <b>Details:</b>
+            Total Frames: ${result.summary.total_frames || "N/A"},
+            FPS: ${result.summary.fps || "N/A"},
+            Duration: ${result.summary.duration_seconds || "N/A"},
+            frame_id: ${result.summary.frame_id || "N/A"},
+            Cracks Detected: ${result.summary.crack_count || "N/A"}
+          </div>
+        `;
+    } catch (err) {
+        document.getElementById("loaderContainer").style.display = "none";
+        alert("Upload failed. Please try again.");
+    }
+});
+`,            FPS: ${result.summary.fps || "N/A"},
+            Duration: ${result.summary.duration_seconds || "N/A"},
+            frame_id: ${result.summary.frame_id || "N/A"},
+            Cracks Detected: ${result.summary.crack_count || "N/A"}
+          </div>
         `;
         chatMessages.scrollTop = chatMessages.scrollHeight;
 
-        // Store the summary in MongoDB for this video
-        const summaryText = `${result.natural_language_summary}\nDetails: Total Frames: ${result.summary.total_frames}, FPS: ${result.summary.fps}, Duration: ${result.summary.duration_seconds}, Cracks Detected: ${result.summary.crack_count}`;
-
-        // Hide the upload modal after successful upload
         const uploadModalEl = document.getElementById('uploadModal');
         if (uploadModalEl) {
           const modal = bootstrap.Modal.getInstance(uploadModalEl);
-          if (modal) {
-            modal.hide();
-          }
+          if (modal) modal.hide();
         }
-        await saveChatMessage(result.video_id, summaryText, "bot", summaryText);
 
-    } catch (err) {
-        console.error(err);
-        document.getElementById("loaderContainer").style.display = "none";
-    }
-});
+        await saveChatMessage(result.video_id, result.natural_language_summary, "bot", result.natural_language_summary);
+
+      }
+    );
+    
 
 async function loadChatHistory(videoId) {
   const chatMessages = document.getElementById('chatMessages');
-  chatMessages.innerHTML = ''; // Clear chat box
+   // Show loading message
+   chatMessages.innerHTML = '<div class="message bot">Loading chat history...</div>';
 
   try {
-    // Show loading message
-    chatMessages.innerHTML = '<div class="message bot">Loading chat history...</div>';
-
     // Fetch chat history for the selected video
     const resp = await fetch(`http://localhost:8000/videos/user_chat_history_fetch?video_id=${encodeURIComponent(videoId)}`);
     const history = await resp.json();
 
     // If there are no messages, show a friendly message
     if (!history || !Array.isArray(history.messages) || history.messages.length === 0) {
+      chatMessages.innerHTML = '<div class="message bot">No chat history found.</div>';
       return;
     }
 
@@ -261,6 +290,7 @@ async function loadChatHistory(videoId) {
 async function saveChatMessage(videoId, summary, role, text) {
   const body = { video_id: videoId, role, text };
   if (summary) body.summary = summary;
+
   await fetch("http://localhost:8000/videos/user_chat_history", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -356,15 +386,13 @@ async function loadFramesGrid(videoId = null) {
 
       // Set the frame image and label
       // Add cache-busting query param to force fresh image from server
-  const cacheBuster = `?t=${Date.now()}`;
+      const cacheBuster = `?t=${Date.now()}`;
       frameBox.innerHTML = `
-        <img src="http://localhost:8000/frames/${chosenVideoId}/${filename}" class="frame-img" />
+        <img src="http://localhost:8000/frames/${chosenVideoId}/${filename}${cacheBuster}" class="frame-img" />
         <div class="frame-label">Frame ${idx + 1}</div>
       `;
       grid.appendChild(frameBox);
-      console.log('frameBox : ', frameBox);
     });
-    console.log('grid : ', grid);
     // Make frames enlargeable after loading
     if (window.makeFramesEnlargeable) makeFramesEnlargeable();
   } catch (error) {
@@ -404,13 +432,8 @@ async function loadFramesGrid(videoId = null) {
 
           // Send videoId and frameFileName to backend
           try {
-            console.log("Sending Frame ID and Video ID to backend...");
-            console.log("Video ID:", lastUploadedVideoId);
-            console.log("Frame Filename:", frameFileName);
-
             const response = await fetch(`http://localhost:8000/videos/frame_details?video_id=${encodeURIComponent(lastUploadedVideoId)}&frame_id=${encodeURIComponent(frameFileName)}`);
             const details = await response.json();
-            console.log("Frame details response:", details);
 
             // Display details in modal if needed
             const detailsDiv = document.getElementById('frameDetails');
@@ -567,7 +590,11 @@ async function loadFramesGrid(videoId = null) {
       if (zoneCanvas.style.display === 'block' && !done) {
         alert('Please finish marking the restricted zone or click No.');
         e.preventDefault();
+        return;
       }
+      // Set preview size hidden fields to actual canvas size (for backend scaling)
+      document.getElementById('previewWidth').value = zoneCanvas.width;
+      document.getElementById('previewHeight').value = zoneCanvas.height;
     });
     // === End Simple Restricted Zone Drawing ===
   

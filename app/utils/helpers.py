@@ -111,5 +111,50 @@ def get_main_direction(dx, dy):
         return "North" if dy > 0 else "South"
 
 
+def scale_coordinates(coords, preview_width, preview_height, video_width, video_height):
+    scaled_coords = []
+    for pt in coords:
+        scaled_x = int(pt['x'] * (video_width / preview_width))
+        scaled_y = int(pt['y'] * (video_height / preview_height))
+        scaled_coords.append({'x': scaled_x, 'y': scaled_y})
+    return scaled_coords
+
+
+def is_point_in_polygon(x, y, polygon):
+    if not polygon or len(polygon) < 3:
+        return True
+
+    poly = [(pt['x'], pt['y']) for pt in polygon]
+    n = len(poly)
+    inside = False
+    px, py = x, y
+    j = n - 1
+
+    for i in range(n):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / ((yj - yi) + 1e-9) + xi):
+            inside = not inside
+        j = i
+
+    return inside
+
+
+def is_bbox_in_polygon(bbox, polygon):
+    """
+    Returns True if any corner of the bbox is inside the polygon.
+    bbox: [x, y, w, h]
+    polygon: list of {'x': X, 'y': Y}
+    """
+    x, y, w, h = bbox
+    x1, y1 = x, y
+    x2, y2 = x + w, y + h
+    corners = [
+        (x1, y1), (x2, y1), (x1, y2), (x2, y2)
+    ]
+    for cx, cy in corners:
+        if is_point_in_polygon(cx, cy, polygon):
+            return True
+    return False
 
 

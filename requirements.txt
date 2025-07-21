@@ -49,3 +49,5 @@ scikit-image #For mask post-processing
 # MongoDB
 pymongo>=4.0.0
 
+shapely
+
