@@ -158,23 +158,23 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id, video
             detections, _ = detect_fn(frame)
             if zone_coords:
                 detections = [det for det in detections if is_point_in_polygon(det["bbox"][0], det["bbox"][1], zone_coords)]
-
             tracks = track_fn(frame, detections)
             for obj in tracks:
-                cur_frames_id = frameid_map.get(frame_number, "")
-                doc = {
-                    "video_id": video_id,
-                    "video_name": os.path.splitext(video_name.split("_", 1)[1])[0],
-                    "frames_id": os.path.splitext(cur_frames_id)[0],
-                    "track_id": obj["track_id"],
-                    "frame_time": round(frame_number / fps, 2),
-                    "model_name": "RTDETR",
-                    "frame": frame_number,
-                    "detected_object": obj["object_type"],
-                    "confidence": obj["confidence"],
-                    "position": obj["position"]
-                }
-                bulk_docs.append(doc)
+                if obj["confidence"] != 0:
+                    cur_frames_id = frameid_map.get(frame_number, "")
+                    doc = {
+                        "video_id": video_id,
+                        "video_name": os.path.splitext(video_name.split("_", 1)[1])[0],
+                        "frames_id": os.path.splitext(cur_frames_id)[0],
+                        "track_id": obj["track_id"],
+                        "frame_time": round(frame_number / fps, 2),
+                        "model_name": "RTDETR",
+                        "frame": frame_number,
+                        "detected_object": obj["object_type"],
+                        "confidence": obj["confidence"],
+                        "position": obj["position"]
+                    }
+                    bulk_docs.append(doc)
 
                 if obj["track_id"] not in track_db:
                     track_db[obj["track_id"]] = {
