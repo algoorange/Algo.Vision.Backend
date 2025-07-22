@@ -174,21 +174,11 @@ let lastUploadedVideoId = null;
         formData.append("file", file);
 
         // Show original video size in the modal when video is loaded
-const videoPreview = document.getElementById("uploadPreviewVideo");
-const videoSizeInfo = document.getElementById("videoSizeInfo");
-videoPreview.addEventListener('loadedmetadata', function() {
-  videoSizeInfo.textContent = `Original Video Size: ${videoPreview.videoWidth} x ${videoPreview.videoHeight}`;
-});
-
-const uploadForm = document.getElementById("uploadForm");
-uploadForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const fileInput = document.getElementById("videoFile");
-    const file = fileInput.files[0];
-    if (!file) return alert("Please select a video file!");
-
-    const formData = new FormData();
-    formData.append("file", file);
+        const videoPreviews = document.getElementById("uploadPreviewVideo");
+        const videoSizeInfo = document.getElementById("videoSizeInfo");
+        videoPreviews.addEventListener('loadedmetadata', function() {
+          videoSizeInfo.textContent = `Original Video Size: ${videoPreviews.videoWidth} x ${videoPreviews.videoHeight}`;
+        });
 
     // Always append previewWidth and previewHeight (canvas size)
     const zoneCanvas = document.getElementById("zoneCanvas");
@@ -207,51 +197,58 @@ uploadForm.addEventListener("submit", async (e) => {
             method: "POST",
             body: formData,
         });
-        const result = await response.json();
+        let result = await response.json();
         document.getElementById("loaderContainer").style.display = "none";
+
+        console.log("Raw Result:", result);
+
         lastUploadedVideoId = result.video_id;
 
         // Update frames grid for this upload
         await loadFramesGrid(result.video_id);
         await loadChatHistory(result.video_id);
 
-        // Add result summary to chat
-        chatMessages.innerHTML += `
-          <div class="message bot">
-            <b>Video Summary:</b><br>
-            ${result.natural_language_summary}<br>
-            <b>Details:</b>
-            Total Frames: ${result.summary.total_frames || "N/A"},
-            FPS: ${result.summary.fps || "N/A"},
-            Duration: ${result.summary.duration_seconds || "N/A"},
-            frame_id: ${result.summary.frame_id || "N/A"},
-            Cracks Detected: ${result.summary.crack_count || "N/A"}
-          </div>
-        `;
-    } catch (err) {
-        document.getElementById("loaderContainer").style.display = "none";
-        alert("Upload failed. Please try again.");
-    }
-});
-`,            FPS: ${result.summary.fps || "N/A"},
-            Duration: ${result.summary.duration_seconds || "N/A"},
-            frame_id: ${result.summary.frame_id || "N/A"},
-            Cracks Detected: ${result.summary.crack_count || "N/A"}
-          </div>
-        `;
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        // Add result summary to chat (Beginner-friendly, robust)
+        const videoData = result.result || result; // fallback for older responses
 
-        const uploadModalEl = document.getElementById('uploadModal');
-        if (uploadModalEl) {
-          const modal = bootstrap.Modal.getInstance(uploadModalEl);
-          if (modal) modal.hide();
+        let summaryText = '';
+        if (videoData && videoData.natural_language_summary) {
+            summaryText = `<b>Video Summary:</b><br>${videoData.natural_language_summary}`;
+        } else {
+            summaryText = `<b>Video Summary:</b><br><span style="color:#c00">No summary available for this video.</span>`;
         }
+        if (videoData && videoData.summary) {
+            summaryText += `<br><b>Details:</b><br>`;
+            summaryText += `Total Frames: ${videoData.summary.total_frames ?? 'N/A'}, <br>`;
+            summaryText += `FPS: ${videoData.summary.fps ?? 'N/A'}, <br>`;
+            summaryText += `Duration: ${videoData.summary.duration_seconds ?? 'N/A'}, <br>`;
+            summaryText += `Frame ID: ${videoData.summary.frame_id ?? 'N/A'}, <br>`;
+            summaryText += `Cracks Detected: ${videoData.summary.crack_count ?? 'N/A'}`;
+        }
+        chatMessages.innerHTML += `<div class="message bot">${summaryText}</div>`;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        // Save summary to chat history for this video
+        await saveUserChatHistory(result.video_id, videoData.natural_language_summary || '', "bot", videoData.natural_language_summary || 'No summary available.');
 
-        await saveChatMessage(result.video_id, result.natural_language_summary, "bot", result.natural_language_summary);
+    const uploadModalEl = document.getElementById('uploadModal');
+    if (uploadModalEl) {
+        const modal = bootstrap.Modal.getInstance(uploadModalEl);
+        if (modal) {
+            modal.hide();
+        }
+    }
 
-      }
-    );
-    
+    // setTimeout(() => {
+    //     loadChatHistory(result.video_id);
+    // }, 500); // Wait 0.5 seconds to ensure summary is saved and displayed
+
+} catch (err) {
+    document.getElementById("loaderContainer").style.display = "none";
+    console.error("❌ Upload failed:", err);
+    alert("Upload failed. Please try again.");
+}
+});
+
 
 async function loadChatHistory(videoId) {
   const chatMessages = document.getElementById('chatMessages');
@@ -287,16 +284,16 @@ async function loadChatHistory(videoId) {
   }
 }
 
-async function saveChatMessage(videoId, summary, role, text) {
+async function saveUserChatHistory(videoId, summary, role, text) {
   const body = { video_id: videoId, role, text };
   if (summary) body.summary = summary;
-
   await fetch("http://localhost:8000/videos/user_chat_history", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
 }  
+
 
 async function sendMsg() {
   const input = document.getElementById('chatInput');
@@ -315,8 +312,7 @@ async function sendMsg() {
   input.value = '';
 
   // Save user message to MongoDB
-  await saveChatMessage(lastUploadedVideoId, "", "user", message);
-
+  await saveUserChatHistory(lastUploadedVideoId, "", "user", message);
   try {
     // Send user message and current video_id to backend
     const resp = await fetch('http://localhost:8000/query/', {
@@ -332,7 +328,7 @@ async function sendMsg() {
     if (result && result.answer) {
       // Show bot response
       chatMessages.innerHTML += `<div class="message bot">${result.answer}</div>`;
-      await saveChatMessage(lastUploadedVideoId, "", "bot", result.answer);
+      await saveUserChatHistory(lastUploadedVideoId, "bot", result.answer, "");
     } else {
       chatMessages.innerHTML += `<div class="message bot">🤖 No response from server.</div>`;
     }
