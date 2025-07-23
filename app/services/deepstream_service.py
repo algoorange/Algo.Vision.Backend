@@ -4,23 +4,106 @@ import json
 import asyncio
 import logging
 import threading
+import subprocess
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 import cv2
 import numpy as np
 
-# DeepStream Python bindings (to be installed)
+# Check if we're running inside a DeepStream container
+def check_deepstream_container():
+    """Check if we're running inside a DeepStream container"""
+    try:
+        # Check for DeepStream environment variables
+        if os.getenv('NVIDIA_DEEPSTREAM_VERSION'):
+            return True
+        
+        # Check for DeepStream installation paths
+        deepstream_paths = [
+            '/opt/nvidia/deepstream',
+            '/usr/lib/x86_64-linux-gnu/gstreamer-1.0/deepstream',
+            '/opt/nvidia/deepstream/deepstream'
+        ]
+        
+        for path in deepstream_paths:
+            if os.path.exists(path):
+                return True
+                
+        # Check if we can import DeepStream Python bindings
+        try:
+            import gi
+            gi.require_version('Gst', '1.0')
+            from gi.repository import Gst
+            import pyds
+            return True
+        except ImportError:
+            pass
+            
+        return False
+    except Exception:
+        return False
+
+# Check for Docker availability (only on host)
+def check_docker_available():
+    """Check if Docker is available (only works on host, not in container)"""
+    try:
+        result = subprocess.run(['docker', '--version'], 
+                              capture_output=True, text=True, timeout=5)
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+def check_deepstream_docker_image():
+    """Check if DeepStream Docker image is available (only works on host)"""
+    try:
+        result = subprocess.run(['docker', 'images', '--format', '{{.Repository}}:{{.Tag}}'], 
+                              capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            images = result.stdout.strip().split('\n')
+            return any('deepstream' in img for img in images)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return False
+
+# Primary detection: Check if we're inside a DeepStream container
+DEEPSTREAM_CONTAINER = check_deepstream_container()
+
+# Secondary detection: Check for Docker availability (only on host)
+DOCKER_AVAILABLE = check_docker_available()
+DEEPSTREAM_DOCKER_AVAILABLE = check_deepstream_docker_image() if DOCKER_AVAILABLE else False
+
+# DeepStream Python bindings (for local installation)
 try:
     import gi
     gi.require_version('Gst', '1.0')
     gi.require_version('GstRtspServer', '1.0')
     from gi.repository import GObject, Gst, GstRtspServer
     import pyds
-    DEEPSTREAM_AVAILABLE = True
-except ImportError:
-    DEEPSTREAM_AVAILABLE = False
-    logging.warning("DeepStream Python bindings not available. Install pyds for full functionality.")
+    DEEPSTREAM_LOCAL_AVAILABLE = True
+    logging.info("DeepStream Python bindings successfully imported")
+except ImportError as e:
+    DEEPSTREAM_LOCAL_AVAILABLE = False
+    logging.warning(f"DeepStream Python bindings not available: {e}")
+
+# Overall DeepStream availability
+DEEPSTREAM_AVAILABLE = DEEPSTREAM_CONTAINER or DEEPSTREAM_LOCAL_AVAILABLE or DEEPSTREAM_DOCKER_AVAILABLE
+
+# Log detection results
+if DEEPSTREAM_CONTAINER:
+    logging.info("✅ DeepStream detected: Running inside DeepStream container")
+elif DEEPSTREAM_LOCAL_AVAILABLE:
+    logging.info("✅ DeepStream detected: Local Python bindings available")
+elif DEEPSTREAM_DOCKER_AVAILABLE:
+    logging.info("✅ DeepStream detected: Docker image available")
+else:
+    logging.warning("❌ DeepStream not detected: No container, local bindings, or Docker image found")
+
+logging.info(f"🔍 Detection summary:")
+logging.info(f"   - Container: {DEEPSTREAM_CONTAINER}")
+logging.info(f"   - Local bindings: {DEEPSTREAM_LOCAL_AVAILABLE}")
+logging.info(f"   - Docker available: {DEEPSTREAM_DOCKER_AVAILABLE}")
+logging.info(f"   - Overall available: {DEEPSTREAM_AVAILABLE}")
 
 from app.utils.helpers import format_result
 from app.services.summary_generate_by_llm import generate_summary
@@ -85,10 +168,74 @@ class DeepStreamPipeline:
         # Initialize GStreamer
         if DEEPSTREAM_AVAILABLE:
             Gst.init(None)
+            self._verify_deepstream_plugins()
             self._create_pipeline()
         else:
             raise RuntimeError("DeepStream not available. Please install DeepStream SDK and Python bindings.")
     
+    def _verify_deepstream_plugins(self):
+        """Verify that DeepStream plugins are available"""
+        required_plugins = [
+            "nvstreammux",
+            "nvinfer", 
+            "nvv4l2decoder",
+            "nvvideoconvert",
+            "nvosd"
+        ]
+        
+        missing_plugins = []
+        registry = Gst.Registry.get()
+        
+        for plugin_name in required_plugins:
+            plugin = registry.find_feature(plugin_name, Gst.ElementFactory.__gtype__)
+            if not plugin:
+                missing_plugins.append(plugin_name)
+        
+        if missing_plugins:
+            logging.error(f"❌ Missing DeepStream plugins: {missing_plugins}")
+            logging.error("💡 This usually means:")
+            logging.error("   1. DeepStream plugins are not in GST_PLUGIN_PATH")
+            logging.error("   2. DeepStream SDK is not properly installed")
+            logging.error("   3. NVIDIA drivers are not compatible")
+            
+            # Try to locate and add DeepStream plugin paths
+            self._add_deepstream_plugin_paths()
+            
+            # Re-check after adding paths
+            missing_after_retry = []
+            for plugin_name in missing_plugins:
+                plugin = registry.find_feature(plugin_name, Gst.ElementFactory.__gtype__)
+                if not plugin:
+                    missing_after_retry.append(plugin_name)
+            
+            if missing_after_retry:
+                raise RuntimeError(f"DeepStream plugins not found: {missing_after_retry}")
+        else:
+            logging.info("✅ All required DeepStream plugins found")
+    
+    def _add_deepstream_plugin_paths(self):
+        """Add DeepStream plugin paths to GStreamer registry"""
+        deepstream_plugin_paths = [
+            "/opt/nvidia/deepstream/deepstream/lib/gst-plugins/",
+            "/opt/nvidia/deepstream/deepstream-7.1/lib/gst-plugins/",
+            "/usr/lib/x86_64-linux-gnu/gstreamer-1.0/deepstream/",
+            "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/deepstream/"
+        ]
+        
+        registry = Gst.Registry.get()
+        
+        for path in deepstream_plugin_paths:
+            if os.path.exists(path):
+                logging.info(f"📍 Adding DeepStream plugin path: {path}")
+                # Scan directory for plugins
+                for plugin_file in os.listdir(path):
+                    if plugin_file.endswith('.so'):
+                        plugin_path = os.path.join(path, plugin_file)
+                        try:
+                            registry.scan_path(plugin_path)
+                        except Exception as e:
+                            logging.debug(f"Could not scan plugin {plugin_path}: {e}")
+
     def _create_pipeline(self):
         """Create GStreamer pipeline with DeepStream elements"""
         self.pipeline = Gst.Pipeline()
@@ -169,6 +316,21 @@ class DeepStreamPipeline:
     def _create_streammux(self):
         """Create stream multiplexer"""
         streammux = Gst.ElementFactory.make("nvstreammux", "streammux")
+        if not streammux:
+            logging.error("❌ Failed to create nvstreammux element")
+            logging.error("💡 Possible solutions:")
+            logging.error("   1. Check if DeepStream plugins are in GST_PLUGIN_PATH")
+            logging.error("   2. Verify DeepStream container is running with GPU access")
+            logging.error("   3. Check NVIDIA driver compatibility")
+            
+            # List available plugins for debugging
+            registry = Gst.Registry.get()
+            plugins = registry.get_plugin_list()
+            plugin_names = [plugin.get_name() for plugin in plugins if 'nv' in plugin.get_name()]
+            logging.error(f"   Available NVIDIA plugins: {plugin_names}")
+            
+            raise RuntimeError("Failed to create nvstreammux element - DeepStream plugins not available")
+        
         streammux.set_property("width", self.config.width)
         streammux.set_property("height", self.config.height)
         streammux.set_property("batch-size", self.config.batch_size)

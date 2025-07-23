@@ -19,6 +19,11 @@
     <button type="button" class="btn btn-primary" onclick="viewAction()">View</button>
     <button type="button" class="upload-btn btn btn-primary mb-0" data-bs-toggle="modal" data-bs-target="#uploadModal">Upload</button>
     <button type="button" class="btn btn-primary" onclick="toggleVideoDropdown()">Show Videos</button>
+    
+    <!-- DeepStream Status Indicator -->
+    <div id="deepstreamStatus" class="ms-auto">
+      <span class="badge bg-secondary">🔍 Checking DeepStream...</span>
+    </div>
   </div> 
 
   <!-- File upload form with Bootstrap -->
@@ -85,6 +90,27 @@
           <div class="modal-body">
             <form id="uploadForm" class="d-flex flex-column gap-3">
               <input type="file" id="videoFile" accept="video/*" required class="form-control bg-dark text-light border-secondary" />
+              
+              <!-- Processing Method Selection -->
+              <div class="form-group">
+                <label class="form-label text-light">Processing Method:</label>
+                <div class="d-flex gap-2">
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="processingMethod" id="cpuProcessing" value="cpu" checked>
+                    <label class="form-check-label text-light" for="cpuProcessing">
+                      🖥️ CPU Processing (Standard)
+                    </label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="processingMethod" id="deepstreamProcessing" value="deepstream">
+                    <label class="form-check-label text-light" for="deepstreamProcessing">
+                      🚀 DeepStream GPU (Faster)
+                    </label>
+                  </div>
+                </div>
+                <small class="text-muted">DeepStream provides 10-30x faster processing with GPU acceleration</small>
+              </div>
+
               <button type="submit" class="btn btn-success">Submit Upload</button>
             </form>
           </div>
@@ -97,13 +123,14 @@
 
 // Global variable to track the currently selected or uploaded video
 let lastUploadedVideoId = null;
+let deepstreamAvailable = false;
 
     // --- Video List Sidebar Logic ---
     async function loadVideoListSidebar() {
       const videoListDiv = document.getElementById('videoList');
       videoListDiv.innerHTML = '<div style="color:#888; padding:10px;">Loading videos...</div>';
       try {
-        const resp = await fetch('http://localhost:8000/videos/list');
+        const resp = await fetch('http://127.0.0.1:8000/videos/list');
         const videos = await resp.json();
         if (!videos.length) {
           videoListDiv.innerHTML = '<div style="color:#888; padding:10px;">No videos uploaded.</div>';
@@ -131,8 +158,39 @@ let lastUploadedVideoId = null;
         videoListDiv.innerHTML = '<div style="color:#f55; padding:10px;">Failed to load videos.</div>';
       }
     }
-    // Load video list on page load
-    window.addEventListener('DOMContentLoaded', loadVideoListSidebar);
+    // Check DeepStream availability
+    async function checkDeepStreamStatus() {
+      try {
+        const response = await fetch('http://127.0.0.1:8000/deepstream/health');
+        const status = await response.json();
+        deepstreamAvailable = status.deepstream_available;
+        
+        const statusElement = document.getElementById('deepstreamStatus');
+        const deepstreamRadio = document.getElementById('deepstreamProcessing');
+        
+        if (deepstreamAvailable) {
+          statusElement.innerHTML = '<span class="badge bg-success">🚀 DeepStream Ready</span>';
+          if (deepstreamRadio) deepstreamRadio.disabled = false;
+        } else {
+          statusElement.innerHTML = '<span class="badge bg-warning">⚠️ DeepStream Unavailable</span>';
+          if (deepstreamRadio) {
+            deepstreamRadio.disabled = true;
+            deepstreamRadio.parentElement.title = "DeepStream not available. Use CPU processing.";
+          }
+        }
+      } catch (error) {
+        const statusElement = document.getElementById('deepstreamStatus');
+        statusElement.innerHTML = '<span class="badge bg-danger">❌ API Error</span>';
+        const deepstreamRadio = document.getElementById('deepstreamProcessing');
+        if (deepstreamRadio) deepstreamRadio.disabled = true;
+      }
+    }
+
+    // Load video list and check DeepStream on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      loadVideoListSidebar();
+      checkDeepStreamStatus();
+    });
 
     // Handle file upload and start live stream
     const uploadForm = document.getElementById("uploadForm");
@@ -144,18 +202,46 @@ uploadForm.addEventListener("submit", async (e) => {
     const file = fileInput.files[0];
     if (!file) return alert("Please select a video file!");
 
+    // Get selected processing method
+    const processingMethod = document.querySelector('input[name="processingMethod"]:checked').value;
+    const isDeepStream = processingMethod === 'deepstream';
+
+    // Check if DeepStream is selected but not available
+    if (isDeepStream && !deepstreamAvailable) {
+        alert("⚠️ DeepStream GPU acceleration is not available. Please select CPU processing or enable DeepStream.");
+        return;
+    }
+
     const formData = new FormData();
     formData.append("file", file);
 
     try {
         document.getElementById("loaderContainer").style.display = "block";
-        const response = await fetch("http://localhost:8000/upload/", {
+        
+        // Choose API endpoint based on processing method
+        const apiEndpoint = isDeepStream 
+            ? "http://127.0.0.1:8000/deepstream/process-video"
+            : "http://127.0.0.1:8000/upload/";
+        
+        // Show processing method in loader
+        const loaderText = isDeepStream 
+            ? "🚀 Processing with DeepStream GPU acceleration..."
+            : "🖥️ Processing with CPU...";
+        
+        // Add processing indicator
+        const loaderContainer = document.getElementById("loaderContainer");
+        loaderContainer.innerHTML = `
+            <div class="loader"></div>
+            <div style="color: white; margin-top: 10px; text-align: center;">${loaderText}</div>
+        `;
+
+        const response = await fetch(apiEndpoint, {
             method: "POST",
             body: formData,
         });
         const result = await response.json();
-        console.log(result);
-        console.log(result.summary.frame_id);
+        console.log('Processing result:', result);
+        
         document.getElementById("loaderContainer").style.display = "none";
         lastUploadedVideoId = result.video_id;
 
@@ -163,23 +249,38 @@ uploadForm.addEventListener("submit", async (e) => {
         await loadFramesGrid(result.video_id);
         await loadChatHistory(result.video_id);
 
+        // Handle different response formats (DeepStream vs regular processing)
+        let summaryText, detailsText;
+        
+        if (isDeepStream) {
+            // DeepStream response format
+            summaryText = result.results?.summary || "Video processed with DeepStream GPU acceleration";
+            detailsText = `
+                <b>🚀 DeepStream GPU Processing Complete!</b><br>
+                Processing Method: GPU Accelerated<br>
+                ${result.results ? `Detections: ${JSON.stringify(result.results)}` : 'Processing completed successfully'}
+            `;
+        } else {
+            // Regular processing response format
+            summaryText = result.natural_language_summary || "Video processed successfully";
+            detailsText = `
+                <b>🖥️ CPU Processing Complete!</b><br>
+                ${result.natural_language_summary ? `${result.natural_language_summary}<br>` : ''}
+                <b>Details:</b>
+                Total Frames: ${result.summary?.total_frames || 'N/A'}, 
+                FPS: ${result.summary?.fps || 'N/A'}, 
+                Duration: ${result.summary?.duration_seconds || 'N/A'}s,
+                Cracks Detected: ${result.summary?.crack_count || 0}
+            `;
+        }
+
         // Add result summary to chat
         chatMessages.innerHTML += `
             <div class="message bot">
-                <b>Video Summary:</b><br>
-                ${result.natural_language_summary}<br>
-                <b>Details:</b>
-                Total Frames: ${result.summary.total_frames}, 
-                FPS: ${result.summary.fps}, 
-                Duration: ${result.summary.duration_seconds},
-                frame_id: ${result.summary.frame_id},
-                Cracks Detected: ${result.summary.crack_count}
+                ${detailsText}
             </div>
         `;
         chatMessages.scrollTop = chatMessages.scrollHeight;
-
-        // Store the summary in MongoDB for this video
-        const summaryText = `${result.natural_language_summary}\nDetails: Total Frames: ${result.summary.total_frames}, FPS: ${result.summary.fps}, Duration: ${result.summary.duration_seconds}, Cracks Detected: ${result.summary.crack_count}`;
 
         // Hide the upload modal after successful upload
         const uploadModalEl = document.getElementById('uploadModal');
@@ -189,7 +290,9 @@ uploadForm.addEventListener("submit", async (e) => {
             modal.hide();
           }
         }
-        await saveChatMessage(result.video_id, summaryText, "bot", summaryText);
+        
+        // Save to MongoDB
+        await saveChatMessage(result.video_id, summaryText, "bot", detailsText);
 
     } catch (err) {
         console.error(err);
@@ -206,7 +309,7 @@ async function loadChatHistory(videoId) {
     chatMessages.innerHTML = '<div class="message bot">Loading chat history...</div>';
 
     // Fetch chat history for the selected video
-    const resp = await fetch(`http://localhost:8000/videos/user_chat_history_fetch?video_id=${encodeURIComponent(videoId)}`);
+    const resp = await fetch(`http://127.0.0.1:8000/videos/user_chat_history_fetch?video_id=${encodeURIComponent(videoId)}`);
     const history = await resp.json();
 
     // If there are no messages, show a friendly message
@@ -235,7 +338,7 @@ async function loadChatHistory(videoId) {
 async function saveChatMessage(videoId, summary, role, text) {
   const body = { video_id: videoId, role, text };
   if (summary) body.summary = summary;
-  await fetch("http://localhost:8000/videos/user_chat_history", {
+  await fetch("http://127.0.0.1:8000/videos/user_chat_history", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
@@ -263,7 +366,7 @@ async function sendMsg() {
 
   try {
     // Send user message and current video_id to backend
-    const resp = await fetch('http://localhost:8000/query/', {
+    const resp = await fetch('http://127.0.0.1:8000/query/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -306,7 +409,7 @@ async function loadFramesGrid(videoId = null) {
 
   // Build the API query URL
   const query = `?video_id=${encodeURIComponent(chosenVideoId)}`;
-  const apiUrl = `http://localhost:8000/videos/frames/list${query}`;
+  const apiUrl = `http://127.0.0.1:8000/videos/frames/list${query}`;
 
   try {
     // Fetch the list of frames from the backend
@@ -330,7 +433,7 @@ async function loadFramesGrid(videoId = null) {
 
       // Set the frame image and label
       frameBox.innerHTML = `
-        <img src="http://localhost:8000/frames/${chosenVideoId}/${filename}" class="frame-img" />
+        <img src="http://127.0.0.1:8000/frames/${chosenVideoId}/${filename}" class="frame-img" />
         <div class="frame-label">Frame ${idx + 1}</div>
       `;
       grid.appendChild(frameBox);
@@ -380,7 +483,7 @@ async function loadFramesGrid(videoId = null) {
             console.log("Video ID:", lastUploadedVideoId);
             console.log("Frame Filename:", frameFileName);
 
-            const response = await fetch(`http://localhost:8000/videos/frame_details?video_id=${encodeURIComponent(lastUploadedVideoId)}&frame_id=${encodeURIComponent(frameFileName)}`);
+            const response = await fetch(`http://127.0.0.1:8000/videos/frame_details?video_id=${encodeURIComponent(lastUploadedVideoId)}&frame_id=${encodeURIComponent(frameFileName)}`);
             const details = await response.json();
             console.log("Frame details response:", details);
 

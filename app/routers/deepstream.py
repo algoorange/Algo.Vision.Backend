@@ -238,12 +238,34 @@ async def deepstream_health():
     """Check DeepStream service health"""
     try:
         # Check if DeepStream bindings are available
-        from app.services.deepstream_service import DEEPSTREAM_AVAILABLE
+        from app.services.deepstream_service import (
+            DEEPSTREAM_AVAILABLE, 
+            DEEPSTREAM_LOCAL_AVAILABLE, 
+            DEEPSTREAM_DOCKER_AVAILABLE,
+            DEEPSTREAM_CONTAINER,
+            DOCKER_AVAILABLE
+        )
+        
+        # Determine processing mode
+        if DEEPSTREAM_CONTAINER:
+            processing_mode = "container"
+        elif DEEPSTREAM_LOCAL_AVAILABLE:
+            processing_mode = "local" 
+        elif DEEPSTREAM_DOCKER_AVAILABLE:
+            processing_mode = "docker"
+        else:
+            processing_mode = "none"
         
         return {
             "status": "healthy" if DEEPSTREAM_AVAILABLE else "degraded",
             "deepstream_available": DEEPSTREAM_AVAILABLE,
-            "active_pipelines": len(deepstream_service.list_pipelines())
+            "deepstream_container": DEEPSTREAM_CONTAINER,
+            "deepstream_local": DEEPSTREAM_LOCAL_AVAILABLE,
+            "deepstream_docker": DEEPSTREAM_DOCKER_AVAILABLE,
+            "docker_available": DOCKER_AVAILABLE,
+            "processing_mode": processing_mode,
+            "active_pipelines": len(deepstream_service.list_pipelines()),
+            "environment": "DeepStream Container" if DEEPSTREAM_CONTAINER else "Host System"
         }
         
     except Exception as e:

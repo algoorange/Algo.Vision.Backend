@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  algovision-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.lite
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/workspace/uploads
+      - ./frames:/workspace/frames
+      - ./outputs:/workspace/outputs
+      - ./inputs:/workspace/inputs
+    environment:
+      - PYTHONPATH=/workspace
+      # CPU-only processing
+      - USE_GPU=false
+      - DEEPSTREAM_AVAILABLE=false
+    restart: unless-stopped 

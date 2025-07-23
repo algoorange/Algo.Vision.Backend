@@ -45,8 +45,11 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p frames uploads outputs inputs logs
 
-# Set environment variables
+# Set environment variables for DeepStream
 ENV PYTHONPATH=/workspace:$PYTHONPATH
+ENV GST_PLUGIN_PATH=/opt/nvidia/deepstream/deepstream/lib/gst-plugins:$GST_PLUGIN_PATH
+ENV LD_LIBRARY_PATH=/opt/nvidia/deepstream/deepstream/lib:$LD_LIBRARY_PATH
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
 # Expose the port
 EXPOSE 8000

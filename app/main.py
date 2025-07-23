@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import upload, query, videos, detection, deepstream
+from app.routers import upload, query, videos, detection, deepstream, tracking
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +23,7 @@ app.include_router(query.router, prefix="/query", tags=["query"])
 app.include_router(videos.router, prefix="/videos", tags=["videos"])
 app.include_router(detection.router, prefix="/detection", tags=["detection"])
 app.include_router(deepstream.router, prefix="/deepstream", tags=["deepstream"])
+app.include_router(tracking.router, prefix="/tracking", tags=["tracking"])
 
 @app.get("/")
 def home():

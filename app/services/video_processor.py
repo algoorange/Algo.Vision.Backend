@@ -175,17 +175,25 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
             print(f"[DEBUG] Tracks at frame {frame_number}: {tracks}")
             for t in tracks:
                 print(f"[DEBUG] Track: {t}")
-                # t is now a dict with keys: object_type, position, track_id, confidence
+                # t is now a dict with enhanced tracking info
                 bbox = t["position"]
-                center = ((bbox["x"] + bbox["x1"]) / 2, (bbox["y"] + bbox["y1"]) / 2)
+                center = t.get("center", ((bbox["x"] + bbox["x1"]) / 2, (bbox["y"] + bbox["y1"]) / 2))
                 tid = t["track_id"]
-                # --- MongoDB Insert: Save detection info for each object ---
+                
+                # Extract enhanced tracking information
+                velocity = t.get("velocity", {"speed": 0.0, "direction": 0.0})
+                is_stationary = t.get("is_stationary", True)
+                time_visible = t.get("time_visible", 1)
+                trajectory = t.get("trajectory", [center])
+                
+                # --- MongoDB Insert: Save enhanced detection info for each object ---
                 cur_frames_id = None
                 if frameid_map is not None:
                     cur_frames_id = frameid_map.get(frame_number, None)
                 if cur_frames_id is None:
                     # fallback to empty string or legacy behavior
                     cur_frames_id = ""
+                
                 doc = {
                     "video_id": video_id,
                     "video_name": os.path.splitext(video_name.split("_", 1)[1])[0],
@@ -201,8 +209,18 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
                         "y": int(bbox["y"]),
                         "x1": int(bbox["x1"]),
                         "y1": int(bbox["y1"]),
-                    }
+                    },
+                    # Enhanced tracking data
+                    "movement": {
+                        "speed": velocity["speed"],
+                        "direction": velocity["direction"],
+                        "is_stationary": is_stationary,
+                        "time_visible": time_visible,
+                        "center": {"x": int(center[0]), "y": int(center[1])}
+                    },
+                    "trajectory_length": len(trajectory)
                 }
+                
                 # Insert the document into MongoDB with error handling and debug print
                 try:
                     video_details_collection.insert_one(doc)
@@ -210,17 +228,49 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id=None, 
                 except Exception as e:
                     print(f"MongoDB insert error: {e}\nDoc: {doc}")
                 # --- End MongoDB Insert ---
+                
                 if tid not in track_db:
                     track_db[tid] = {
                         "track_id": tid,
                         "label": t["object_type"],
                         "trajectory": [],
                         "timestamps": [],
-                        "frames": []
+                        "frames": [],
+                        "movement_data": {
+                            "total_distance": 0.0,
+                            "max_speed": 0.0,
+                            "avg_speed": 0.0,
+                            "stationary_frames": 0,
+                            "moving_frames": 0,
+                            "directions": []
+                        }
                     }
+                
+                # Update tracking database with enhanced data
                 track_db[tid]["trajectory"].append(center)
                 track_db[tid]["timestamps"].append(round(frame_number / fps, 2))
                 track_db[tid]["frames"].append(frame_number)
+                
+                # Update movement statistics
+                movement_data = track_db[tid]["movement_data"]
+                movement_data["max_speed"] = max(movement_data["max_speed"], velocity["speed"])
+                movement_data["directions"].append(velocity["direction"])
+                
+                if is_stationary:
+                    movement_data["stationary_frames"] += 1
+                else:
+                    movement_data["moving_frames"] += 1
+                
+                # Calculate total distance if trajectory has multiple points
+                if len(track_db[tid]["trajectory"]) > 1:
+                    p1, p2 = track_db[tid]["trajectory"][-2], track_db[tid]["trajectory"][-1]
+                    distance = ((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)**0.5
+                    movement_data["total_distance"] += distance
+                    
+                    # Calculate average speed
+                    total_frames = len(track_db[tid]["frames"])
+                    if total_frames > 0:
+                        movement_data["avg_speed"] = movement_data["total_distance"] / total_frames
         frame_number += 1
     print(f"✅ Processed {frame_number} frames, {len(track_db)} tracks")
     return list(track_db.values())

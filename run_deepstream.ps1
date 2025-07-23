@@ -7,15 +7,19 @@ $currentDir = Get-Location
 Write-Host "Starting DeepStream container..." -ForegroundColor Green
 Write-Host "Workspace: ${currentDir}\${workspaceDir}" -ForegroundColor Yellow
 
-# Run DeepStream container with GPU support and volume mounts
-# Mount the entire AlgoVision directory so we can access the app files
-docker run --gpus all -it --rm `
-    -v "${currentDir}:/workspace" `
-    -v "${currentDir}\uploads:/workspace/inputs" `
-    -v "${currentDir}\frames:/workspace/outputs" `
-    -p 8554:8554 `
-    -p 9000:9000 `
-    --name deepstream-container `
-    nvcr.io/nvidia/deepstream:7.1-gc-triton-devel
-    
+# Create the Docker command as a single string
+$dockerCmd = "docker run --gpus all -it --rm " +
+    "-v `"${currentDir}\${workspaceDir}:/workspace`" " +
+    "-v `"${currentDir}\uploads:/workspace/inputs`" " +
+    "-v `"${currentDir}\frames:/workspace/outputs`" " +
+    "-p 8554:8554 " +
+    "-p 9000:9000 " +
+    "--name deepstream-container " +
+    "nvcr.io/nvidia/deepstream:7.1-triton-multiarch"
+
+Write-Host "Running command: $dockerCmd" -ForegroundColor Cyan
+
+# Execute the Docker command
+Invoke-Expression $dockerCmd
+
 Write-Host "DeepStream container stopped" -ForegroundColor Yellow
