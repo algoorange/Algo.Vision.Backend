@@ -193,7 +193,7 @@ let lastUploadedVideoId = null;
 
     try {
         document.getElementById("loaderContainer").style.display = "block";
-        const response = await fetch("http://localhost:8000/upload/llava", {
+        const response = await fetch("http://localhost:8000/upload/", {
             method: "POST",
             body: formData,
         });

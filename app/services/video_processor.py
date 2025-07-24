@@ -9,6 +9,7 @@ from app.services.llava_groq_service import analyze_video_frames_with_llava, cre
 from fastapi import UploadFile
 import uuid
 from app.utils.helpers import is_point_in_polygon
+import datetime
 
 # --- MongoDB Setup ---
 from pymongo import MongoClient
@@ -143,7 +144,7 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
 
 
 
-async def process_video_with_laava(file: UploadFile, video_id: str, coords=None, preview_width=None, preview_height=None):
+# async def process_video_with_laava(file: UploadFile, video_id: str, coords=None, preview_width=None, preview_height=None):
     """
     Process video using LLaVA (Large Language and Vision Assistant) via Groq API.
     This function analyzes video frames using vision-language model for comprehensive understanding.
@@ -316,9 +317,12 @@ async def process_video_with_laava(file: UploadFile, video_id: str, coords=None,
 
 
 def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id, video_name, frameid_map, zone_coords=None):
+ 
     frame_number = 0
     track_db = {}
-    bulk_docs = []
+    frames = []
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration = total_frames / fps if fps > 0 else 0
 
     while True:
         ret = cap.grab()
@@ -334,41 +338,68 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id, video
             if zone_coords:
                 detections = [det for det in detections if is_point_in_polygon(det["bbox"][0], det["bbox"][1], zone_coords)]
             tracks = track_fn(frame, detections)
-            for obj in tracks:
-                if obj["confidence"] != 0:
-                    cur_frames_id = frameid_map.get(frame_number, "")
-                    doc = {
-                        "video_id": video_id,
-                        "video_name": os.path.splitext(video_name.split("_", 1)[1])[0],
-                        "frames_id": os.path.splitext(cur_frames_id)[0],
-                        "track_id": obj["track_id"],
-                        "frame_time": round(frame_number / fps, 2),
-                        "model_name": "RTDETR",
-                        "frame": frame_number,
-                        "detected_object": obj["object_type"],
-                        "confidence": obj["confidence"],
-                        "position": obj["position"]
-                    }
-                    bulk_docs.append(doc)
 
-                if obj["track_id"] not in track_db:
-                    track_db[obj["track_id"]] = {
-                        "track_id": obj["track_id"],
-                        "label": obj["object_type"],
+            frame_objects = []
+            cur_frames_id = frameid_map.get(frame_number, "")
+            for obj in tracks:
+                if obj.get("confidence", 0) == 0:
+                    continue
+                track_id = obj.get("track_id")
+                if track_id is not None:
+                    object_type = obj.get("object_type", "unknown")
+                    position = obj.get("position", {})
+                    if position and "x" in position and "x1" in position and "y" in position and "y1" in position:
+                        frame_objects.append({
+                            "track_id": track_id,
+                            "object_type": object_type,
+                            "confidence": obj.get("confidence", 0.0),
+                            "position": position,
+                            "bbox": [position["x"], position["y"], position["x1"] - position["x"], position["y1"] - position["y"]],
+                            "model_name": "RTDETR",
+                            "frame_number": frame_number,
+                            "frame_time": round(frame_number / fps, 2)
+                        })
+
+                if track_id not in track_db:
+                    track_db[track_id] = {
+                        "track_id": track_id,
+                        "label": object_type,
                         "trajectory": [],
                         "timestamps": [],
                         "frames": []
                     }
+                if position and "x" in position and "x1" in position and "y" in position and "y1" in position:
+                    track_db[track_id]["trajectory"].append(
+                        ((position["x"] + position["x1"]) / 2, (position["y"] + position["y1"]) / 2)
+                    )
+                    track_db[track_id]["timestamps"].append(round(frame_number / fps, 2))
+                    track_db[track_id]["frames"].append(frame_number)
 
-                track_db[obj["track_id"]]["trajectory"].append(
-                    ((obj["position"]["x"] + obj["position"]["x1"]) / 2, (obj["position"]["y"] + obj["position"]["y1"]) / 2)
-                )
-                track_db[obj["track_id"]]["timestamps"].append(round(frame_number / fps, 2))
-                track_db[obj["track_id"]]["frames"].append(frame_number)
+            if frame_objects:
+                frame_data = {
+                    "frame_id": os.path.splitext(cur_frames_id)[0],
+                    "frame_number": frame_number,
+                    "frame_time": round(frame_number / fps, 2),
+                    "total_tracked_objects": len(frame_objects),
+                    "objects": frame_objects,
+                }
+                frames.append(frame_data)
 
         frame_number += 1
 
-    if bulk_docs:
-        video_details_collection.insert_many(bulk_docs)
+    # Compose the full video document
+    video_doc = {
+        "video_id": video_id,
+        "video_name": os.path.splitext(video_name.split("_", 1)[1])[0] if "_" in video_name else video_name,
+        "fps": fps,
+        "total_frames": total_frames,
+        "duration": duration,
+        "frames": frames,
+        "created_at": datetime.datetime.now(datetime.timezone.utc),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc),
+    }
+
+    if frames:
+        video_details_collection.insert_one(video_doc)
 
     return list(track_db.values())
