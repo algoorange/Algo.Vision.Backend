@@ -1,3 +1,4 @@
+	
 from ultralytics import YOLO, RTDETR
 import torch
 import cv2
@@ -40,8 +41,8 @@ transform = transforms.Compose([
 
 # Detection configuration
 DETECTION_CONFIG = {
-    "use_yolo": True,
-    "use_rtdetr": True,
+    "use_yolo": False,
+    "use_rtdetr": False,
     "use_faster_rcnn": True,
     "yolo_threshold": 0.60,
     "rtdetr_threshold": 0.60,
@@ -191,19 +192,16 @@ def detect_objects(frame):
         conf = det["confidence"]
         source = det["source"]
         
-        # Different colors for different models (BGR format)
+        # Different colors for different models
         if source == "Faster R-CNN":
-            color = (0, 0, 255)  # Red
+            color = (255, 0, 0)  # Blue
         elif source == "RTDETR":
-            color = (0, 255, 255)  # Yellow/Cyan
-        elif source == "YOLOv8":
+            color = (0, 255, 255)  # Yellow
+        else:  # YOLOv8
             color = (0, 255, 0)  # Green
-        else:
-            color = (255, 255, 255)  # White (default)
-        
-        # Remove the special truck color override - let model colors show
-        # if label == "truck":
-        #     color = (0, 255, 255)  # Yellow for trucks
+        # Special color for trucks
+        if label == "truck":
+            color = (0, 255, 255)  # Yellow for trucks
             
         cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), color, 2)
         cv2.putText(annotated_frame, f"{source}: {label} {conf:.2f}", (x, y - 10),

@@ -52,3 +52,4 @@ pymongo>=4.0.0
 shapely
 
 google-adk==1.6.1
+litellm

@@ -101,9 +101,9 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
                     ], np.int32).reshape((-1, 1, 2))
 
                     cv2.polylines(annotated_frame, [scaled_pts], isClosed=True, color=(0, 0, 255), thickness=2)
-                frames_id = f"{uuid.uuid4()}.jpg"
-                frame_path = os.path.join(frames_dir, frames_id)
-                cv2.imwrite(frame_path, annotated_frame)
+                frames_id = f"frame_{frame_number:05d}.jpg"
+                frame_save_path = os.path.join(frames_dir, frames_id)
+                cv2.imwrite(frame_save_path, annotated_frame)
                 frames_saved += 1
                 frameid_map[frame_number] = frames_id
                 last_saved_frames_id = frames_id
@@ -133,6 +133,8 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
     })
     print("🎉 Video processing complete")
 
+    # Return frames in original order
+    ordered_frame_ids = [frameid_map[k] for k in sorted(frameid_map)]
     # Store in ChromaDB
     video_data = {
         "video_id": video_id,
@@ -142,6 +144,7 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
         "frames_file_name": os.path.splitext(last_saved_frames_id)[0] if last_saved_frames_id else "",
         "file_path": video_filename,
         "frames_dir": video_id,
+        "ordered_frame_ids": ordered_frame_ids
     }
     
     # Store video analysis in ChromaDB
