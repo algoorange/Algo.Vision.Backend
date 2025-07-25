@@ -99,15 +99,12 @@ def get_frame_details(
     frame_id: str = Query(...)
 ):
     frame_id_split = frame_id.split('.')[0]
-    docs = video_details_collection.find(
-        {"video_id": video_id, "frames_id": frame_id_split},
-        {"_id": 0}
-    )
-    docs_list = []
-    for doc in docs:
-        docs_list.append(doc)
-    if docs_list:
-        return docs_list
+    video_doc = video_details_collection.find_one({"video_id": video_id}, {"_id": 0, "frames": 1})
+    if video_doc and "frames" in video_doc:
+        for frame in video_doc["frames"]:
+            # frame_id is now at the frame level
+            if str(frame.get("frame_id")) == frame_id_split:
+                return frame
     return {"error": "Frame not found"}
 
 
