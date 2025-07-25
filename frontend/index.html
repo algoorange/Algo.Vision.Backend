@@ -363,28 +363,19 @@ async function loadFramesGrid(videoId = null) {
   try {
     // Fetch the list of frames from the backend
     const response = await fetch(apiUrl);
-    const data = await response.json();
-    console.log('frames/list API response:', data);
-
-    let frameFilenames = [];
-    // If backend returns an object with ordered_frame_ids, use it. Otherwise fallback to array.
-    if (data && Array.isArray(data.ordered_frame_ids)) {
-      frameFilenames = data.ordered_frame_ids;
-    } else if (Array.isArray(data)) {
-      frameFilenames = data;
-    } else if (data && Array.isArray(data.frames_ordered)) {
-      frameFilenames = data.frames_ordered;
-    }
+    console.log('response : ', response);
+    const frames = await response.json();
+    console.log('frames : ', frames);
 
     // If there are no frames, show a message
-    if (!frameFilenames.length) {
+    if (!frames.length) {
       grid.innerHTML = '<div style="color:#888">No frames found.</div>';
       return;
     }
 
     // Clear the grid and add each frame as a card
     grid.innerHTML = '';
-    frameFilenames.forEach((filename, idx) => {
+    frames.forEach((filename, idx) => {
       // Create a container for each frame
       const frameBox = document.createElement('div');
       frameBox.className = 'frame-box';
