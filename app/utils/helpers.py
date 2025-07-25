@@ -43,7 +43,7 @@ def describe_actions(trajectory):
     return actions
 
 
-def build_summary_prompt(tracks, max_objects=100):
+def build_summary_prompt(tracks, max_objects=150):
     """
     Builds a compact summary prompt for the LLM.
 

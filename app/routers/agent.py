@@ -76,5 +76,5 @@ async def google_adk_agent(data: dict = Body(...)):
             return f"HTTP Error: {str(http_err)}"
         except Exception as ex:
             return f"Error: {str(ex)}"
-
         
+
