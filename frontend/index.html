@@ -193,7 +193,7 @@ let lastUploadedVideoId = null;
 
     try {
         document.getElementById("loaderContainer").style.display = "block";
-        const response = await fetch("http://localhost:8000/upload/llava", {
+        const response = await fetch("http://localhost:8000/upload/", {
             method: "POST",
             body: formData,
         });
@@ -315,7 +315,7 @@ async function sendMsg() {
   await saveUserChatHistory(lastUploadedVideoId, "", "user", message);
   try {
     // Send user message and current video_id to backend
-    const resp = await fetch('http://localhost:8000/query/', {
+    const resp = await fetch('http://localhost:8000/agent/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
