@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import upload, query, videos, detection
+from app.routers import upload, query, videos, detection, agent
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +22,7 @@ app.include_router(upload.router, prefix="/upload", tags=["upload"])
 app.include_router(query.router, prefix="/query", tags=["query"])
 app.include_router(videos.router, prefix="/videos", tags=["videos"])
 app.include_router(detection.router, prefix="/detection", tags=["detection"])
+app.include_router(agent.router, prefix="/agent", tags=["agent"])
 
 @app.get("/")
 def home():

@@ -10,6 +10,7 @@ from fastapi import UploadFile
 import uuid
 from app.utils.helpers import is_point_in_polygon
 import datetime
+from app.services.chromadb_service import chromadb_service
 
 # --- MongoDB Setup ---
 from pymongo import MongoClient
@@ -132,7 +133,8 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
     })
     print("🎉 Video processing complete")
 
-    return {
+    # Store in ChromaDB
+    video_data = {
         "video_id": video_id,
         "summary": result["summary"],
         "natural_language_summary": summary,
@@ -141,6 +143,15 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
         "file_path": video_filename,
         "frames_dir": video_id,
     }
+    
+    # Store video analysis in ChromaDB
+    chromadb_service.store_video_analysis(video_data)
+    
+    # Store frame objects in ChromaDB (if frames data is available)
+    if hasattr(result, 'frames') and result.get('frames'):
+        chromadb_service.store_frame_objects(video_id, result['frames'])
+
+    return video_data
 
 
 
@@ -402,4 +413,8 @@ def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id, video
     if frames:
         video_details_collection.insert_one(video_doc)
 
+    # Store frame data in ChromaDB
+    if frames:
+        chromadb_service.store_frame_objects(video_id, frames)
+    
     return list(track_db.values())
