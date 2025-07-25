@@ -37,7 +37,7 @@ sentence-transformers
 
 # store video in vector database
 faiss-cpu
-chromadb
+chromadb>=0.4.0
 
 # model for generate the summary of the video
 groq
@@ -51,3 +51,4 @@ pymongo>=4.0.0
 
 shapely
 
+google-adk==1.6.1

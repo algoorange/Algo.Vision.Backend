@@ -191,16 +191,19 @@ def detect_objects(frame):
         conf = det["confidence"]
         source = det["source"]
         
-        # Different colors for different models
+        # Different colors for different models (BGR format)
         if source == "Faster R-CNN":
-            color = (255, 0, 0)  # Blue
+            color = (0, 0, 255)  # Red
         elif source == "RTDETR":
-            color = (0, 255, 255)  # Yellow
-        else:  # YOLOv8
+            color = (0, 255, 255)  # Yellow/Cyan
+        elif source == "YOLOv8":
             color = (0, 255, 0)  # Green
-        # Special color for trucks
-        if label == "truck":
-            color = (0, 255, 255)  # Yellow for trucks
+        else:
+            color = (255, 255, 255)  # White (default)
+        
+        # Remove the special truck color override - let model colors show
+        # if label == "truck":
+        #     color = (0, 255, 255)  # Yellow for trucks
             
         cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), color, 2)
         cv2.putText(annotated_frame, f"{source}: {label} {conf:.2f}", (x, y - 10),

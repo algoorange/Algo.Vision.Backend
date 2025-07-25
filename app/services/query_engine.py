@@ -4,18 +4,46 @@ from app.utils.embeddings import embedder, embedding_index, embedding_metadata
 import os
 
 async def semantic_search(prompt: str):
-    query_embedding = embedder.encode(prompt)
-    scores, indices = embedding_index.search(query_embedding[None, :], k=1)
+    try:
+        # Check if embedding index is empty
+        if embedding_index.ntotal == 0:
+            return {
+                "answer": "No video data available for search. Please upload some videos first.",
+                "source_video": None
+            }
+        
+        query_embedding = embedder.encode(prompt)
+        scores, indices = embedding_index.search(query_embedding[None, :], k=1)
 
-    if scores and scores[0][0] > 0.4:  # lowered threshold for more matches
-        metadata = embedding_metadata[indices[0][0]]
+        # Check if we got any results
+        if len(indices[0]) == 0 or indices[0][0] == -1:
+            return {
+                "answer": "No relevant video found for your query.",
+                "source_video": None
+            }
+
+        if scores and scores[0][0] > 0.4:  # lowered threshold for more matches
+            # Safely access the metadata
+            if indices[0][0] < len(embedding_metadata):
+                metadata = embedding_metadata[indices[0][0]]
+                return {
+                    "answer": metadata["summary"],
+                    "source_video": metadata["video"]
+                }
+            else:
+                return {
+                    "answer": "Video data found but metadata is incomplete.",
+                    "source_video": None
+                }
+        else:
+            return {
+                "answer": "No relevant video found with sufficient similarity.",
+                "source_video": None
+            }
+    except Exception as e:
+        logging.error(f"Error in semantic_search: {e}")
         return {
-            "answer": metadata["summary"],
-            "source_video": metadata["video"]
-        }
-    else:
-        return {
-            "answer": "No relevant video found.",
+            "answer": f"Error during search: {str(e)}",
             "source_video": None
         }
 
