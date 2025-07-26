@@ -46,7 +46,7 @@ DETECTION_CONFIG = {
     "use_faster_rcnn": True,
     "yolo_threshold": 0.60,
     "rtdetr_threshold": 0.60,
-    "faster_rcnn_threshold": 0.60,
+    "faster_rcnn_threshold": 0.6,
     "prioritize_faster_rcnn": True  # If True, Faster R-CNN results come first
 }
 
