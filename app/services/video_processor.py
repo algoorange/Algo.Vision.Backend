@@ -116,7 +116,7 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
                             label_text = f"ID:{track_id} {obj_type} {conf:.2f}"
                             # Draw the track_id just above the bounding box (or inside if space)
                             text_x, text_y = x1, max(y1 - 10, 0)
-                            cv2.putText(annotated_frame, label_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                            cv2.putText(annotated_frame, label_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
                     # Draw zone polygon if needed
                     if coords and preview_width and preview_height:
