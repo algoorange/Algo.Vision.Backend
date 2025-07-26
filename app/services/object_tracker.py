@@ -73,17 +73,23 @@ def track_objects(frame, detections):
             else:
                 det_label = det_label or "unknown"
                 det_conf = det_conf or 0.0
-        output_tracks.append({
-            "object_type": det_label,
-            "position": {
-                "x": int(bbox[0]),
-                "y": int(bbox[1]),
-                "x1": int(bbox[2]),
-                "y1": int(bbox[3])
-            },
-            "track_id": track_object.track_id,
-            "confidence": float(det_conf) if det_conf is not None else 0.0
-        })
+        # Ensure det_conf is a float and not None
+        if det_conf is None:
+            det_conf = 0.0
+        if det_conf > 0:
+            print("det_label", det_label)
+            print("det_conf", det_conf)
+            output_tracks.append({
+                "object_type": det_label,
+                "position": {
+                    "x": int(bbox[0]),
+                    "y": int(bbox[1]),
+                    "x1": int(bbox[2]),
+                    "y1": int(bbox[3])
+                },
+                "track_id": track_object.track_id,
+                "confidence": float(det_conf)
+            })
     return output_tracks
 
 
