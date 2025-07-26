@@ -1,6 +1,6 @@
 import os
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.encoders import jsonable_encoder
 from pymongo import MongoClient
 from fastapi import Body, Query
@@ -43,13 +43,33 @@ def list_frames(video_id: str = Query(..., description="Unique video ID")):
     frame_files.sort()
     return frame_files
 
+#side bar video list
 @router.get("/list", response_class=JSONResponse)
 def list_videos():
-    """List all video files in the uploads directory."""
+    """List all video files in the uploads directory, with thumbnails."""
     if not os.path.exists(UPLOAD_DIR):
         return []
     files = [f for f in os.listdir(UPLOAD_DIR) if os.path.isfile(os.path.join(UPLOAD_DIR, f))]
-    return files
+    video_list = []
+    for f in files:
+        # Always extract video_id as frontend expects (split('_')[0])
+        video_id = f.split('_')[0] if '_' in f else os.path.splitext(f)[0]
+        frame_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'frames', video_id))
+        thumbnail_url = None
+        if os.path.exists(frame_dir):
+            jpgs = [ff for ff in os.listdir(frame_dir) if ff.lower().endswith('.jpg')]
+            if jpgs:
+                jpgs.sort()
+                thumbnail_url = f"/frames/{video_id}/{jpgs[0]}"
+        # Do NOT assign thumbnails from other folders; keep thumbnail_url None if not found
+        print(f"Video: {f}, video_id: {video_id}, thumbnail_url: {thumbnail_url}")
+        video_list.append({
+            "name": f,
+            "video_id": video_id,
+            "thumbnail_url": thumbnail_url
+        })
+    return video_list
+
 
 
 @router.post("/user_chat_history", response_class=JSONResponse)

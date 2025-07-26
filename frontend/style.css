@@ -561,3 +561,14 @@ body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+.video-card img,
+.video-card div {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #222;
+  margin-right: 8px;
+}

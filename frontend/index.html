@@ -125,38 +125,66 @@
 let lastUploadedVideoId = null;
 
     // --- Video List Sidebar Logic ---
-    async function loadVideoListSidebar() {
-      const videoListDiv = document.getElementById('videoList');
-      videoListDiv.innerHTML = '<div style="color:#888; padding:10px;">Loading videos...</div>';
-      try {
-        const resp = await fetch('http://localhost:8000/videos/list');
-        const videos = await resp.json();
-        if (!videos.length) {
-          videoListDiv.innerHTML = '<div style="color:#888; padding:10px;">No videos uploaded.</div>';
-          return;
-        }
-        videoListDiv.innerHTML = '';
-        videos.forEach(filename => {
-          // Extract video_id from filename (assumes format: {uuid}_{original_filename})
-          const videoId = filename.split('_')[0];
-          const displayName = filename.split('_')[1];
-          const card = document.createElement('div');
-          card.className = 'video-card';
-          card.title = filename;
-          card.textContent = displayName;
-          card.onclick = () => {
-            loadFramesGrid(videoId);
-            loadChatHistory(videoId);
-            lastUploadedVideoId = videoId;
-          };
-          
-          videoListDiv.appendChild(card);
-
-        });
-      } catch (err) {
-        videoListDiv.innerHTML = '<div style="color:#f55; padding:10px;">Failed to load videos.</div>';
-      }
+async function loadVideoListSidebar() {
+  const videoListDiv = document.getElementById('videoList');
+  videoListDiv.innerHTML = '<div style="color:#888; padding:10px;">Loading videos...</div>';
+  try {
+    const resp = await fetch('http://localhost:8000/videos/list');
+    const videos = await resp.json();
+    if (!videos.length) {
+      videoListDiv.innerHTML = '<div style="color:#888; padding:10px;">No videos uploaded.</div>';
+      return;
     }
+    videoListDiv.innerHTML = '';
+    videos.forEach(video => {
+      // video.name is the filename, video.thumbnail_url is the frame URL (may be null)
+      const videoId = video.name.split('_')[0];
+      const displayName = video.name.split('_')[1] || video.name;
+      const card = document.createElement('div');
+      card.className = 'video-card d-flex align-items-center';
+      card.title = video.name;
+      card.style.gap = '10px';
+      card.onclick = () => {
+        loadFramesGrid(videoId);
+        loadChatHistory(videoId);
+        lastUploadedVideoId = videoId;
+      };
+
+      // Thumbnail image or fallback
+      let thumb;
+      if (video.thumbnail_url) {
+        thumb = document.createElement('img');
+        thumb.src = `http://localhost:8000${video.thumbnail_url}`;
+        thumb.alt = 'thumbnail';
+        thumb.style.width = '40px';
+        thumb.style.height = '40px';
+        thumb.style.objectFit = 'cover';
+        thumb.style.borderRadius = '6px';
+        thumb.style.border = '1px solid #444';
+        thumb.style.background = '#222';
+        thumb.style.marginRight = '8px';
+      } else {
+        thumb = document.createElement('div');
+        thumb.style.width = '40px';
+        thumb.style.height = '40px';
+        thumb.style.background = '#222';
+        thumb.style.borderRadius = '6px';
+        thumb.style.border = '1px solid #444';
+        thumb.style.marginRight = '8px';
+      }
+      card.appendChild(thumb);
+
+      // Video name
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = displayName;
+      card.appendChild(nameSpan);
+
+      videoListDiv.appendChild(card);
+    });
+  } catch (err) {
+    videoListDiv.innerHTML = '<div style="color:#f55; padding:10px;">Failed to load videos.</div>';
+  }
+}
     // Load video list on page load
     window.addEventListener('DOMContentLoaded', loadVideoListSidebar);
 
