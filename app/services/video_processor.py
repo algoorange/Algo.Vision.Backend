@@ -65,6 +65,7 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
     frames_dir = os.path.join(FRAMES_BASE_DIR, video_id)
     os.makedirs(frames_dir, exist_ok=True)
 
+    tracks_by_frame = {}  
     while True:
         success, frame = cap.read()
         if not success:
@@ -95,33 +96,116 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
                     filtered_objects.append(obj)
 
             if filtered_objects:
-                if coords and preview_width and preview_height:
-                    scale_x = annotated_frame.shape[1] / video_width
-                    scale_y = annotated_frame.shape[0] / video_height
+                # --- TRACKING AND ANNOTATION WITH TRACK ID ---
+                # Run tracking on the resized frame and filtered detections
+                tracks = object_tracker.track_objects(resized_frame, filtered_objects)
+                if tracks:  # Only proceed if there are actual tracked objects
+                    tracks_by_frame[frame_number] = tracks  # <-- Store tracks for this frame
 
-                    scaled_pts = np.array([
-                        [int(pt['x'] * scale_x), int(pt['y'] * scale_y)]
-                        for pt in coords
-                    ], np.int32).reshape((-1, 1, 2))
+                    # Draw bounding box and track_id for each tracked object
+                    for track in tracks:
+                        pos = track.get("position", {})
+                        track_id = track.get("track_id")
+                        conf = track.get("confidence", 0.0)
+                        obj_type = track.get("object_type", "object")
+                        if pos and track_id is not None:
+                            x1, y1, x2, y2 = pos.get("x", 0), pos.get("y", 0), pos.get("x1", 0), pos.get("y1", 0)
+                            color = (0, 255, 0)
+                            if conf > 0.7:
+                                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                            label_text = f"ID:{track_id} {obj_type} {conf:.2f}"
+                            # Draw the track_id just above the bounding box (or inside if space)
+                            text_x, text_y = x1, max(y1 - 10, 0)
+                            cv2.putText(annotated_frame, label_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-                    cv2.polylines(annotated_frame, [scaled_pts], isClosed=True, color=(0, 0, 255), thickness=2)
-                frames_id = f"frame_{frame_number:05d}.jpg"
-                frame_save_path = os.path.join(frames_dir, frames_id)
-                cv2.imwrite(frame_save_path, annotated_frame)
-                frames_saved += 1
-                frameid_map[frame_number] = frames_id
-                last_saved_frames_id = frames_id
+                    # Draw zone polygon if needed
+                    if coords and preview_width and preview_height:
+                        scale_x = annotated_frame.shape[1] / video_width
+                        scale_y = annotated_frame.shape[0] / video_height
+                        scaled_pts = np.array([
+                            [int(pt['x'] * scale_x), int(pt['y'] * scale_y)]
+                            for pt in coords
+                        ], np.int32).reshape((-1, 1, 2))
+                        cv2.polylines(annotated_frame, [scaled_pts], isClosed=True, color=(0, 0, 255), thickness=2)
+                    frames_id = f"frame_{frame_number:05d}.jpg"
+                    frame_save_path = os.path.join(frames_dir, frames_id)
+                    cv2.imwrite(frame_save_path, annotated_frame)
+                    frames_saved += 1
+                    frameid_map[frame_number] = frames_id
+                    last_saved_frames_id = frames_id
+            # If no filtered_objects or no tracks, do NOT save frame or add to frameid_map or tracks_by_frame!
 
-    cap.release()
+    # --- Collect tracked objects and trajectories in the main loop ---
+    frames_data = []
+    track_db = {}
+    frame_number = 0  # Ensure frame_number is correct if not already
+    for fn in sorted(frameid_map):
+        frames_id = frameid_map[fn]
+        tracks = tracks_by_frame.get(fn, [])  # <-- Restore this line
+        frame_objects = []
+        for obj in tracks:
+            if obj.get("confidence", 0) == 0:
+                continue
+            track_id = obj.get("track_id")
+            if track_id is not None:
+                object_type = obj.get("object_type", "unknown")
+                position = obj.get("position", {})
+                if position and "x" in position and "x1" in position and "y" in position and "y1" in position:
+                    frame_objects.append({
+                        "track_id": track_id,
+                        "object_type": object_type,
+                        "confidence": obj.get("confidence", 0.0),
+                        "position": position,
+                        "bbox": [position["x"], position["y"], position["x1"] - position["x"], position["y1"] - position["y"]],
+                        "model_name": "RTDETR",
+                        "frame_number": fn,
+                        "frame_time": round(fn / fps, 2)
+                    })
 
-    cap = cv2.VideoCapture(video_path)
-    tracks = build_tracking_data(
-        cap, object_detector.detect_objects, object_tracker.track_objects, fps, interval, video_id, video_filename, frameid_map, coords
-    )
-    cap.release()
+                if track_id not in track_db:
+                    track_db[track_id] = {
+                        "track_id": track_id,
+                        "label": object_type,
+                        "trajectory": [],
+                        "timestamps": [],
+                        "frames": []
+                    }
+                if position and "x" in position and "x1" in position and "y" in position and "y1" in position:
+                    track_db[track_id]["trajectory"].append(
+                        ((position["x"] + position["x1"]) / 2, (position["y"] + position["y1"]) / 2)
+                    )
+                    track_db[track_id]["timestamps"].append(round(fn / fps, 2))
+                    track_db[track_id]["frames"].append(fn)
+        if frame_objects:
+            frame_data = {
+                "frame_id": os.path.splitext(frames_id)[0],
+                "frame_number": fn,
+                "frame_time": round(fn / fps, 2),
+                "total_tracked_objects": len(frame_objects),
+                "objects": frame_objects,
+            }
+            frames_data.append(frame_data)
 
-    result = format_result(tracks, frames_saved, fps, frames_saved / fps)
-    summary_prompt = build_summary_prompt(tracks)
+    # Compose the full video document
+    video_doc = {
+        "video_id": video_id,
+        "video_name": os.path.splitext(video_filename.split("_", 1)[1])[0] if "_" in video_filename else video_filename,
+        "fps": fps,
+        "total_frames": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+        "duration": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / fps if fps > 0 else 0,
+        "frames": frames_data,
+        "created_at": datetime.datetime.now(datetime.timezone.utc),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc),
+        "file_path": video_filename,
+        "frames_dir": video_id,
+        "ordered_frame_ids": [frameid_map[k] for k in sorted(frameid_map)]
+    }
+    video_details_collection.insert_one(video_doc)
+    chromadb_service.store_frame_objects(video_id, frames_data)
+
+    # Optionally, you can build summary/tracks from just the tracks (not frames_data)
+    result = format_result(list(track_db.values()), frames_saved, fps, frames_saved / fps)
+    summary_prompt = build_summary_prompt(list(track_db.values()))
     summary = await generate_summary(summary_prompt) if summary_prompt.strip() else "Unable to generate summary."
 
     embedding = embedder.encode(summary)
@@ -160,96 +244,4 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
 
     return video_data
 
-
-
-def build_tracking_data(cap, detect_fn, track_fn, fps, interval, video_id, video_name, frameid_map, zone_coords=None):
- 
-    frame_number = 0
-    track_db = {}
-    frames = []
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / fps if fps > 0 else 0
-
-    while True:
-        ret = cap.grab()
-        if not ret:
-            break
-
-        if frame_number % interval == 0:
-            ret, frame = cap.retrieve()
-            if not ret:
-                break
-
-            detections, _ = detect_fn(frame)
-            if zone_coords:
-                detections = [det for det in detections if is_point_in_polygon(det["bbox"][0], det["bbox"][1], zone_coords)]
-            tracks = track_fn(frame, detections)
-
-            frame_objects = []
-            cur_frames_id = frameid_map.get(frame_number, "")
-            for obj in tracks:
-                if obj.get("confidence", 0) == 0:
-                    continue
-                track_id = obj.get("track_id")
-                if track_id is not None:
-                    object_type = obj.get("object_type", "unknown")
-                    position = obj.get("position", {})
-                    if position and "x" in position and "x1" in position and "y" in position and "y1" in position:
-                        frame_objects.append({
-                            "track_id": track_id,
-                            "object_type": object_type,
-                            "confidence": obj.get("confidence", 0.0),
-                            "position": position,
-                            "bbox": [position["x"], position["y"], position["x1"] - position["x"], position["y1"] - position["y"]],
-                            "model_name": "RTDETR",
-                            "frame_number": frame_number,
-                            "frame_time": round(frame_number / fps, 2)
-                        })
-
-                if track_id not in track_db:
-                    track_db[track_id] = {
-                        "track_id": track_id,
-                        "label": object_type,
-                        "trajectory": [],
-                        "timestamps": [],
-                        "frames": []
-                    }
-                if position and "x" in position and "x1" in position and "y" in position and "y1" in position:
-                    track_db[track_id]["trajectory"].append(
-                        ((position["x"] + position["x1"]) / 2, (position["y"] + position["y1"]) / 2)
-                    )
-                    track_db[track_id]["timestamps"].append(round(frame_number / fps, 2))
-                    track_db[track_id]["frames"].append(frame_number)
-
-            if frame_objects:
-                frame_data = {
-                    "frame_id": os.path.splitext(cur_frames_id)[0],
-                    "frame_number": frame_number,
-                    "frame_time": round(frame_number / fps, 2),
-                    "total_tracked_objects": len(frame_objects),
-                    "objects": frame_objects,
-                }
-                frames.append(frame_data)
-
-        frame_number += 1
-
-    # Compose the full video document
-    video_doc = {
-        "video_id": video_id,
-        "video_name": os.path.splitext(video_name.split("_", 1)[1])[0] if "_" in video_name else video_name,
-        "fps": fps,
-        "total_frames": total_frames,
-        "duration": duration,
-        "frames": frames,
-        "created_at": datetime.datetime.now(datetime.timezone.utc),
-        "updated_at": datetime.datetime.now(datetime.timezone.utc),
-    }
-
-    if frames:
-        video_details_collection.insert_one(video_doc)
-
-    # Store frame data in ChromaDB
-    if frames:
-        chromadb_service.store_frame_objects(video_id, frames)
-    
-    return list(track_db.values())
+# --- REMOVE build_tracking_data function, as it is no longer needed ---

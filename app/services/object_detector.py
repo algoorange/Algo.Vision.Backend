@@ -204,8 +204,8 @@ def detect_objects(frame):
             color = (0, 255, 255)  # Yellow for trucks
             
         cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), color, 2)
-        cv2.putText(annotated_frame, f"{source}: {label} {conf:.2f}", (x, y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        # cv2.putText(annotated_frame, f"{source}: {label} {conf:.2f}", (x, y - 10),
+        #             cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
     merged_detections = merge_detections(all_detections)                
     return merged_detections, annotated_frame
