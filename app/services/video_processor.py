@@ -8,6 +8,8 @@ from app.services.summary_generate_by_llm import generate_summary
 from app.services.llava_groq_service import analyze_video_frames_with_llava, create_default_prompts, generate_video_summary_with_llava
 from fastapi import UploadFile
 import uuid
+import numpy as np
+import tempfile
 from app.utils.helpers import is_point_in_polygon
 import datetime
 from app.services.chromadb_service import chromadb_service
@@ -245,3 +247,173 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
     return video_data
 
 # --- REMOVE build_tracking_data function, as it is no longer needed ---
+
+
+async def process_video_with_laava(file: UploadFile, video_id: str, coords=None, preview_width=None, preview_height=None):
+    """
+    Process video using LLaVA (Large Language and Vision Assistant) via Groq API.
+    This function analyzes video frames using vision-language model for comprehensive understanding.
+    """
+    video_filename = f"{video_id}_{file.filename}"
+    video_path = await save_video(file, video_id)
+
+    cap = cv2.VideoCapture(video_path)
+    video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration = total_frames / fps if fps > 0 else 0
+
+    print(f"🎬 Processing video with LLaVA: {video_filename}")
+    print(f"📊 Video specs: {video_width}x{video_height}, {fps:.2f} FPS, {duration:.2f}s duration")
+
+    if coords:
+        # Use provided preview size for scaling, fallback to 640x360
+        pw = int(preview_width) if preview_width else 640
+        ph = int(preview_height) if preview_height else 360
+        coords = scale_coordinates(coords, pw, ph, video_width, video_height)
+        print(f"🎯 Zone coordinates scaled for analysis")
+
+    # Extract frames for LLaVA analysis (every 2 seconds or max 10 frames to avoid API limits)
+    interval = max(int(fps * 2), 1)  # Every 2 seconds
+    max_frames = 10  # Limit to avoid API rate limits
+    frame_number = 0
+    frames_for_analysis = []
+    frame_metadata = []
+    frames_dir = os.path.join(FRAMES_BASE_DIR, video_id)
+    os.makedirs(frames_dir, exist_ok=True)
+
+    print(f"🔍 Extracting frames every {interval} frames (every ~{interval/fps:.1f}s)")
+
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        frame_number += 1
+        if frame_number % interval == 0 and len(frames_for_analysis) < max_frames:
+            # Store original frame for LLaVA analysis
+            timestamp = frame_number / fps
+            
+            # Apply zone filtering if specified
+            frame_to_analyze = frame.copy()
+            if coords:
+                # Create a mask for the zone
+                mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+                zone_points = np.array([[int(pt['x']), int(pt['y'])] for pt in coords], np.int32)
+                cv2.fillPoly(mask, [zone_points], 255)
+                
+                # Apply mask to frame (optional - you might want full frame context)
+                # frame_to_analyze = cv2.bitwise_and(frame, frame, mask=mask)
+                
+                # Draw zone boundary on frame for visualization
+                cv2.polylines(frame_to_analyze, [zone_points], isClosed=True, color=(0, 0, 255), thickness=3)
+
+            frames_for_analysis.append(frame_to_analyze)
+            frame_metadata.append({
+                "frame_number": frame_number,
+                "timestamp": timestamp,
+                "has_zone": coords is not None
+            })
+
+            # Save annotated frame
+            frames_id = f"frame_{frame_number:05d}.jpg"
+            frame_path = os.path.join(frames_dir, frames_id)
+            cv2.imwrite(frame_path, frame_to_analyze)
+            print(f"📸 Saved frame {frame_number} at {timestamp:.2f}s for LLaVA analysis")
+
+    cap.release()
+
+    if not frames_for_analysis:
+        print("❌ No frames extracted for analysis")
+        return {
+            "video_id": video_id,
+            "summary": "No frames could be extracted from the video",
+            "natural_language_summary": "Unable to analyze video - no frames extracted",
+            "llava_analysis": [],
+            "frames_file_name": "",
+            "file_path": video_filename,
+            "frames_dir": video_id,
+        }
+
+    print(f"🧠 Analyzing {len(frames_for_analysis)} frames with LLaVA...")
+
+    # Create prompts for each frame
+    base_prompt = "Analyze this video frame and describe:"
+    if coords:
+        base_prompt += " Pay special attention to the red outlined zone area."
+    
+    prompts = []
+    for i, metadata in enumerate(frame_metadata):
+        timestamp = metadata["timestamp"]
+        zone_note = " (focus on red zone)" if metadata["has_zone"] else ""
+        prompt = f"{base_prompt}\n1. What objects and people are visible?\n2. What activities or movements are happening?\n3. Describe the scene composition and context.\nFrame at {timestamp:.1f}s{zone_note}"
+        prompts.append(prompt)
+
+    try:
+        # Analyze frames with LLaVA
+        llava_analyses = await analyze_video_frames_with_llava(frames_for_analysis, prompts)
+        
+        print(f"✅ LLaVA analysis complete for {len(llava_analyses)} frames")
+
+        # Generate comprehensive summary
+        video_metadata = {
+            "duration": duration,
+            "fps": fps,
+            "total_frames": total_frames,
+            "analyzed_frames": len(frames_for_analysis),
+            "has_zone_restriction": coords is not None
+        }
+
+        summary = await generate_video_summary_with_llava(llava_analyses, video_metadata)
+        
+        # Create embedding for the summary
+        embedding = embedder.encode(summary)
+        embedding_index.add(embedding[None, :])
+        embedding_metadata.append({
+            "video": video_filename,
+            "summary": summary,
+            "llava_analysis": llava_analyses,
+            "duration": duration,
+            "video_id": video_id,
+            "coords": coords,
+            "analysis_method": "llava_groq",
+            "frames_analyzed": len(frames_for_analysis)
+        })
+
+        print("🎉 LLaVA video processing complete!")
+
+        return {
+            "video_id": video_id,
+            "summary": {
+                "total_frames_analyzed": len(frames_for_analysis),
+                "duration_seconds": duration,
+                "fps": fps,
+                "analysis_method": "LLaVA via Groq",
+                "zone_restricted": coords is not None
+            },
+            "natural_language_summary": summary,
+            "llava_analysis": [
+                {
+                    "frame_number": frame_metadata[i]["frame_number"],
+                    "timestamp": frame_metadata[i]["timestamp"],
+                    "analysis": analysis
+                }
+                for i, analysis in enumerate(llava_analyses)
+            ],
+            "frames_file_name": video_id,  # Directory name where frames are stored
+            "file_path": video_filename,
+            "frames_dir": video_id,
+        }
+
+    except Exception as e:
+        print(f"❌ Error during LLaVA analysis: {str(e)}")
+        return {
+            "video_id": video_id,
+            "summary": f"Error during analysis: {str(e)}",
+            "natural_language_summary": f"LLaVA analysis failed: {str(e)}",
+            "llava_analysis": [],
+            "frames_file_name": video_id,
+            "file_path": video_filename,
+            "frames_dir": video_id,
+        }

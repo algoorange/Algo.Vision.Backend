@@ -221,7 +221,9 @@ async function loadVideoListSidebar() {
 
     try {
         document.getElementById("loaderContainer").style.display = "block";
-        const response = await fetch("http://localhost:8000/upload/", {
+        // const response = await fetch("http://localhost:8000/upload/llava",
+        const response = await fetch("http://localhost:8000/upload/",
+         {
             method: "POST",
             body: formData,
         });
@@ -347,8 +349,7 @@ async function sendMsg() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        video_id: lastUploadedVideoId, // ✅ include video_id
-        question: message
+        question: `This is the video id ${lastUploadedVideoId} based on this video answer the question: ${message}`
       })
     });
     const result = await resp.json();
