@@ -114,17 +114,17 @@ if API_KEY:
 
         When a user asks a question about videos or video analysis:
         1. Understand the user's query about video content, objects, or activities
-        2. Use the chromadb_semantic_search tool to find relevant video analysis data
+        2. Use the video_data_using_mongodb tool to find relevant video analysis data
         3. Analyze the search results to provide accurate answers
         4. Provide detailed responses based on the video analysis data
         
         You have access to:
-        - chromadb_semantic_search: Search for video analysis and frame data
-        - if data is not enough in semantic serach then use the mogno db analysis and answer for the question
+        - video_data_using_mongodb: Search for video analysis and frame data
+        - if data is not enough in video_data_using_mongodb serach then use the mogno db analysis and answer for the question
         
         Focus on providing accurate information about video content, detected objects, activities, and analysis results.
         """,
-        tools=[chromadb_semantic_search, video_data_using_mongodb],  # Include both tools
+        tools=[video_data_using_mongodb],  # Include both tools
         output_key="google_adk_agent_response"
     )
     print("✅ Google ADK Agent created successfully with ChromaDB search capability")
