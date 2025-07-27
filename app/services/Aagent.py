@@ -109,7 +109,7 @@ if API_KEY:
         name="google_adk_agent",
         model=groq_llm,
         planner=PlanReActPlanner(),
-        description="A vision assistant that can analyze video data and answer questions using ChromaDB semantic search",
+        description="A vision assistant that can analyze video data and answer questions using MongoDB search",
         instruction="""You are a vision assistant that can analyze video data and answer questions about video content.
 
         When a user asks a question about videos or video analysis:
@@ -127,7 +127,7 @@ if API_KEY:
         tools=[video_data_using_mongodb],  # Include both tools
         output_key="google_adk_agent_response"
     )
-    print("✅ Google ADK Agent created successfully with ChromaDB search capability")
+    print("✅ Google ADK Agent created successfully with MongoDB search capability")
 else:
     print("❌ Cannot create Google ADK Agent - no API key available")
     Google_ADK_Agent = None
