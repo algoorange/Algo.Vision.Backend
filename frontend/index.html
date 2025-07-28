@@ -345,11 +345,11 @@ async function sendMsg() {
   await saveUserChatHistory(lastUploadedVideoId, "", "user", message);
   try {
     // Send user message and current video_id to backend
-    const resp = await fetch('http://localhost:8000/agent/', {
+    const resp = await fetch('http://localhost:8000/query/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        question: `This is the video id ${lastUploadedVideoId} based on this video answer the question: ${message}`
+        question: `This is the video id ${lastUploadedVideoId} based on this video id answer the question: ${message}`
       })
     });
     const result = await resp.json();

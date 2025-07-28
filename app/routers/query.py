@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Body
 from app.services import query_engine
 from app.utils.embeddings import embedder, embedding_index, embedding_metadata
+from app.services.chat_service.main_llm import ChatService
+import asyncio
 
 router = APIRouter()
 
-@router.post("/")
+# @router.post("/")
 async def query_llm(data: dict = Body(...)):
     question = data.get("question")
 
@@ -12,7 +14,6 @@ async def query_llm(data: dict = Body(...)):
         return {"error": "Question is required"}
 
     #Embed user query and find most relevant video summary    
-
     semantic_result = await query_engine.semantic_search(question)
 
     combined_prompt = (
@@ -25,8 +26,17 @@ async def query_llm(data: dict = Body(...)):
     #use GROQ model here 
     llm_response = await query_engine.check_with_groq(combined_prompt, model="llama-3.1-8b-instant")
 
-
     return {
         "answer": llm_response,
         "source_video": semantic_result["source_video"]
     }
+
+# New endpoint for direct LLM chat
+@router.post("/")
+async def llm_chat(data: dict = Body(...)):
+    question = data.get("question")
+    if not question:
+        return {"error": "Question is required"}
+    chat_service = ChatService()
+    result = await chat_service.chat_query(question)
+    return {"answer": result}

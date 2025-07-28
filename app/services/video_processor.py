@@ -5,7 +5,7 @@ from app.services import object_detector, object_tracker
 from app.utils.helpers import format_result, build_summary_prompt, scale_coordinates, is_bbox_in_polygon
 from app.utils.embeddings import embedder, embedding_index, embedding_metadata
 from app.services.summary_generate_by_llm import generate_summary
-from app.services.llava_groq_service import analyze_video_frames_with_llava, create_default_prompts, generate_video_summary_with_llava
+from app.services.llava_groq_service import analyze_video_frames_with_llava, generate_video_summary_with_llava
 from fastapi import UploadFile
 import uuid
 import numpy as np
@@ -20,6 +20,8 @@ from pymongo import MongoClient
 mongo_client = MongoClient("mongodb://localhost:27017/")
 db = mongo_client["algo_compliance_db_2"]
 video_details_collection = db["video_details"]
+video_details_collection_llava = db["video_details_llava"]
+
 # --- End MongoDB Setup ---
 
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'uploads'))
@@ -234,7 +236,8 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
         "frames_file_name": os.path.splitext(last_saved_frames_id)[0] if last_saved_frames_id else "",
         "file_path": video_filename,
         "frames_dir": video_id,
-        "ordered_frame_ids": ordered_frame_ids
+        "ordered_frame_ids": ordered_frame_ids,
+        "coords": coords,
     }
     
     # Store video analysis in ChromaDB
@@ -249,7 +252,7 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
 # --- REMOVE build_tracking_data function, as it is no longer needed ---
 
 
-async def process_video_with_laava(file: UploadFile, video_id: str, coords=None, preview_width=None, preview_height=None):
+# async def process_video_with_laava(file: UploadFile, video_id: str, coords=None, preview_width=None, preview_height=None):
     """
     Process video using LLaVA (Large Language and Vision Assistant) via Groq API.
     This function analyzes video frames using vision-language model for comprehensive understanding.
