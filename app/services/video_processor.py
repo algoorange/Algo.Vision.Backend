@@ -145,10 +145,10 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
     frames_data = []
     track_db = {}
     frame_number = 0  # Ensure frame_number is correct if not already
+    
+    # First pass: Build track_db with start/end information
     for fn in sorted(frameid_map):
-        frames_id = frameid_map[fn]
-        tracks = tracks_by_frame.get(fn, [])  # <-- Restore this line
-        frame_objects = []
+        tracks = tracks_by_frame.get(fn, [])
         for obj in tracks:
             if obj.get("confidence", 0) == 0:
                 continue
@@ -156,7 +156,58 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
             if track_id is not None:
                 object_type = obj.get("object_type", "unknown")
                 position = obj.get("position", {})
+                
+                if track_id not in track_db:
+                    track_db[track_id] = {
+                        "track_id": track_id,
+                        "label": object_type,
+                        "trajectory": [],
+                        "timestamps": [],
+                        "frames": [],
+                        "start_time": None,
+                        "start_frame": None,
+                        "start_position": {},
+                        "end_time": None,
+                        "end_frame": None,
+                        "end_position": {}
+                    }
+                
                 if position and "x" in position and "x1" in position and "y" in position and "y1" in position:
+                    track_db[track_id]["trajectory"].append(
+                        ((position["x"] + position["x1"]) / 2, (position["y"] + position["y1"]) / 2)
+                    )
+                    track_db[track_id]["timestamps"].append(round(fn / fps, 2))
+                    track_db[track_id]["frames"].append(fn)
+                    
+                    # Set start info on first appearance
+                    if len(track_db[track_id]["frames"]) == 1:
+                        track_db[track_id]["start_time"] = round(fn / fps, 2)
+                        track_db[track_id]["start_frame"] = fn
+                        track_db[track_id]["start_position"] = position.copy() if position else {}
+                    
+                    # Always update end info on every appearance
+                    track_db[track_id]["end_time"] = round(fn / fps, 2)
+                    track_db[track_id]["end_frame"] = fn
+                    track_db[track_id]["end_position"] = position.copy() if position else {}
+    
+    # Second pass: Build frames_data with complete track information for each object
+    for fn in sorted(frameid_map):
+        frames_id = frameid_map[fn]
+        tracks = tracks_by_frame.get(fn, [])
+        frame_objects = []
+        
+        for obj in tracks:
+            if obj.get("confidence", 0) == 0:
+                continue
+            track_id = obj.get("track_id")
+            if track_id is not None:
+                object_type = obj.get("object_type", "unknown")
+                position = obj.get("position", {})
+                
+                if position and "x" in position and "x1" in position and "y" in position and "y1" in position:
+                    # Get start/end info from track_db for this track_id
+                    track_info = track_db.get(track_id, {})
+                    
                     frame_objects.append({
                         "track_id": track_id,
                         "object_type": object_type,
@@ -165,23 +216,16 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
                         "bbox": [position["x"], position["y"], position["x1"] - position["x"], position["y1"] - position["y"]],
                         "model_name": "RTDETR",
                         "frame_number": fn,
-                        "frame_time": round(fn / fps, 2)
+                        "frame_time": round(fn / fps, 2),
+                        # Include start/end tracking information for this track_id
+                        "start_time": track_info.get("start_time"),
+                        "end_time": track_info.get("end_time"),
+                        "start_frame": track_info.get("start_frame"),
+                        "end_frame": track_info.get("end_frame"),
+                        "start_position": track_info.get("start_position", {}),
+                        "end_position": track_info.get("end_position", {})
                     })
-
-                if track_id not in track_db:
-                    track_db[track_id] = {
-                        "track_id": track_id,
-                        "label": object_type,
-                        "trajectory": [],
-                        "timestamps": [],
-                        "frames": []
-                    }
-                if position and "x" in position and "x1" in position and "y" in position and "y1" in position:
-                    track_db[track_id]["trajectory"].append(
-                        ((position["x"] + position["x1"]) / 2, (position["y"] + position["y1"]) / 2)
-                    )
-                    track_db[track_id]["timestamps"].append(round(fn / fps, 2))
-                    track_db[track_id]["frames"].append(fn)
+        
         if frame_objects:
             frame_data = {
                 "frame_id": os.path.splitext(frames_id)[0],
@@ -214,10 +258,14 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
     video_duration = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / fps if fps > 0 else 0
     valid_durations = [d for d in SEGMENT_DURATIONS if d <= video_duration]
     all_segment_docs = []
+    segment_summaries = []  # Initialize to avoid UnboundLocalError
+    
     for duration in valid_durations:
         segments = segment_tracking_data(frames_data, duration)
-        segment_summaries = [summarize_segment(segment) for segment in segments]
-        for idx, summary in enumerate(segment_summaries):
+        duration_summaries = [summarize_segment(segment) for segment in segments]
+        segment_summaries.extend(duration_summaries)  # Collect all summaries
+        
+        for idx, summary in enumerate(duration_summaries):
             segment_doc = {
                 "video_id": video_id,
                 "segment_index": idx,
@@ -225,6 +273,7 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
                 "summary": summary
             }
             all_segment_docs.append(segment_doc)
+    
     if all_segment_docs:
         video_details_collection_segment.insert_many(all_segment_docs)
 
