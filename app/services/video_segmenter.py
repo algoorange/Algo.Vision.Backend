@@ -28,32 +28,40 @@ def summarize_segment(segment: List[Dict[str, Any]]) -> Dict[str, Any]:
     Summarizes a segment of tracking data (frames_data style).
     Returns a dict summary including all object details.
     """
-    object_types = {}
-    total_objects = 0
+    detection_counts = {}  # total detections per type
     objects = []
+    unique_objects_by_type = {}  # unique track_id per type
+    # total_objects = 0
 
     for frame in segment:
         frame_time = frame.get("frame_time")
         for obj in frame.get('objects', []):
             obj_type = obj.get('object_type', 'unknown')
-            object_types[obj_type] = object_types.get(obj_type, 0) + 1
-            total_objects += 1
+            track_id = obj.get('track_id')
+            # detection_counts[obj_type] = detection_counts.get(obj_type, 0) + 1
+            # total_objects += 1
             objects.append({
                 "frame_time": frame_time,
                 "object_type": obj_type,
                 "confidence": obj.get("confidence"),
                 "position": obj.get("position"),
                 "bbox": obj.get("bbox"),
-                "track_id": obj.get("track_id"),
+                "track_id": track_id,
             })
+            if obj_type not in unique_objects_by_type:
+                unique_objects_by_type[obj_type] = set()
+            if track_id is not None:
+                unique_objects_by_type[obj_type].add(track_id)
+
+    object_counts = {k: len(v) for k, v in unique_objects_by_type.items()}
 
     summary = {
         "start_time": segment[0]["frame_time"],
         "end_time": segment[-1]["frame_time"],
-        "object_counts": object_types,
-        "total_objects": total_objects,
+        "object_counts": object_counts,  # unique objects by track_id
+        # "detection_counts": detection_counts,  # total detections
+        # "total_objects": total_objects,
         "frame_count": len(segment),
         "objects": objects,  # List of all detected objects with details
     }
     return summary
-
