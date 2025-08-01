@@ -209,21 +209,24 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
     video_details_collection.insert_one(video_doc)
     chromadb_service.store_frame_objects(video_id, frames_data)
 
-    # --- Segment the video and summarize segments ---
-    SEGMENT_DURATION = 5.0  # seconds, adjust as needed
-    segments = segment_tracking_data(frames_data, SEGMENT_DURATION)
-    segment_summaries = [summarize_segment(segment) for segment in segments]
-    # Store segment summaries in MongoDB collection
-    segment_docs = []
-    for idx, summary in enumerate(segment_summaries):
-        segment_doc = {
-            "video_id": video_id,
-            "segment_index": idx,
-            "summary": summary
-        }
-        segment_docs.append(segment_doc)
-    if segment_docs:
-        video_details_collection_segment.insert_many(segment_docs)
+    # --- Segment the video and summarize segments for valid durations ---
+    SEGMENT_DURATIONS = [5.0, 10.0, 30.0, 60.0]  # seconds
+    video_duration = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / fps if fps > 0 else 0
+    valid_durations = [d for d in SEGMENT_DURATIONS if d <= video_duration]
+    all_segment_docs = []
+    for duration in valid_durations:
+        segments = segment_tracking_data(frames_data, duration)
+        segment_summaries = [summarize_segment(segment) for segment in segments]
+        for idx, summary in enumerate(segment_summaries):
+            segment_doc = {
+                "video_id": video_id,
+                "segment_index": idx,
+                "segment_duration": duration,  # Store the duration for filtering
+                "summary": summary
+            }
+            all_segment_docs.append(segment_doc)
+    if all_segment_docs:
+        video_details_collection_segment.insert_many(all_segment_docs)
 
     # Optionally, you can build summary/tracks from just the tracks (not frames_data)
     result = format_result(list(track_db.values()), frames_saved, fps, frames_saved / fps)
