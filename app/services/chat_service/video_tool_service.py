@@ -5,138 +5,60 @@ import json
 client = MongoClient(os.getenv("MONGO_URI"))
 db = client["algo_compliance_db_2"]
 collection = db["video_details"]
+# video_details_segment = db["video_details_segment"]
 
 class VideoToolService:
     def __init__(self, request):
         self.request = request
 
-    # async def analyze_video_behavior(args):
-        import json
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except Exception:
-                return {"result": "Invalid arguments: could not parse JSON."}
-        """
-        This function answers questions about a video using data from the database.
-        You can extend this function to support more types of analytics.
-        """
-        query = args.get("query")  # User's question, e.g., 'How many cars are in the video?'
-        video_id = args.get("video_id")  # Video ID to look up in the DB
-
-        # Fetch the video data from MongoDB
-        video = collection.find_one({"video_id": video_id})
-        if not video:
-            return {"result": f"No video found with ID: {video_id}"}
-
-        frames = video.get("frames", [])
-        video_name = video.get('video_name', 'Unknown')
-
-        # Gather all objects from all frames
-        all_objects = [obj for frame in frames for obj in frame.get("objects", [])]
-
-        # Count objects by type (e.g., car, truck, etc.)
-        type_counts = {}
-        for obj in all_objects:
-            obj_type = obj.get('object_type', 'unknown')
-            type_counts[obj_type] = type_counts.get(obj_type, 0) + 1
-
-        # Beginner-friendly: Simple natural language matching
-        if query:
-            q = query.lower()
-            if 'how many cars' in q:
-                car_count = type_counts.get('car', 0)
-                return {"result": f"There are {car_count} cars detected in video '{video_name}'."}
-            elif 'how many trucks' in q:
-                truck_count = type_counts.get('truck', 0)
-                return {"result": f"There are {truck_count} trucks detected in video '{video_name}'."}
-            elif 'total objects' in q or 'how many objects' in q:
-                return {"result": f"There are {len(all_objects)} objects detected in video '{video_name}'."}
-            else:
-                # Default: Just list all object types and their counts
-                type_summary = ', '.join([f"{k}: {v}" for k, v in type_counts.items()])
-                return {"result": f"Object counts in video '{video_name}': {type_summary}", "reformatting": True}
-        else:
-            return {"result": "No query provided."}
-
-        # You can add more 'elif' blocks above for more question types!
-
-    # async def get_object_details(self, args):
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except Exception:
-                return {"result": "Invalid arguments: could not parse JSON."}
-        """
-        Returns details of all objects of a specific type in the video.
-        Args must include 'object_type' and 'video_id'.
-        """
-        object_type = args.get("object_type")
-        video_id = args.get("video_id")
-        if not object_type or not video_id:
-            return {"result": "Missing object_type or video_id."}
-
-        video = collection.find_one({"video_id": video_id})
-        if not video:
-            return {"result": f"No video found with ID: {video_id}"}
-        frames = video.get("frames", [])
-        video_name = video.get('video_name', 'Unknown')
-
-        # Gather all objects of the specified type
-        matching_objects = [
-            {"frame_number": frame.get("frame_number"), "frame_time": frame.get("frame_time"), **obj}
-            for frame in frames for obj in frame.get("objects", [])
-            if obj.get("object_type") == object_type
-        ]
-        if not matching_objects:
-            return {"result": f"No objects of type '{object_type}' found in video '{video_name}'."}
-        return {
-            "result": f"Found {len(matching_objects)} '{object_type}' objects in video '{video_name}'.",
-            "reformatting": True
-        }
-
-    # async def get_object_statistics(self, args):
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except Exception:
-                return {"result": "Invalid arguments: could not parse JSON."}
-        """
-        Returns statistics (count, average confidence, etc.) for objects of a specific type in the video.
-        Args must include 'object_type' and 'video_id'.
-        """
-        object_type = args.get("object_type")
-        video_id = args.get("video_id")
-        if not object_type or not video_id:
-            return {"result": "Missing object_type or video_id."}
-
-        video = collection.find_one({"video_id": video_id})
-        if not video:
-            return {"result": f"No video found with ID: {video_id}"}
-        frames = video.get("frames", [])
-        video_name = video.get('video_name', 'Unknown')
-
-        matching_objects = [obj for frame in frames for obj in frame.get("objects", []) if obj.get("object_type") == object_type]
-        count = len(matching_objects)
-        if count == 0:
-            return {"result": f"No objects of type '{object_type}' found in video '{video_name}'."}
-        avg_confidence = sum(obj.get("confidence", 0) for obj in matching_objects) / count
-        return {
-            "result": f"Statistics for '{object_type}' in video '{video_name}': count={count}, avg_confidence={avg_confidence:.2f}",
-            "reformatting": True
-        }
 
     async def get_all_object_details(self, args):
         """
         Returns all objects (from all frames) for the given video_id.
+        If the question specifies a time frame (e.g., 'first 5 seconds', 'last 10 seconds'),
+        fetches and aggregates object details for that time range from video_details_segment.
         Args:
             video_id (str): The video ID to search for.
+            question (str, optional): User's query which may contain a time frame.
         Returns:
-            list: List of all objects (dicts) from all frames.
+            dict: List of all objects (dicts) from all frames or segments.
         """
+        import json
+        from pymongo import MongoClient
+        import os
+
         if isinstance(args, str):
             args = json.loads(args)
         video_id = args.get("video_id")
+        question = args.get("question", "")
+
+        # Check if question specifies a time frame
+        time_frame = _parse_time_frame_from_question(question) if question else None
+
+        if time_frame:
+            # Use segmented collection
+            # Use request.app.db if available, else fallback to env
+            db = self.request.app.db if self.request and hasattr(self.request, 'app') and hasattr(self.request.app, 'db') else None
+            if db is None:
+                client = MongoClient(os.getenv("MONGO_URI"))
+                db = client["algo_compliance_db_2"]
+            video_details_collection_segment = db["video_details_segment"]
+
+            segments = list(video_details_collection_segment.find({"video_id": video_id}).sort("segment_index", 1))
+            if not segments:
+                return {"result": []}
+            # Filter segments by time frame
+            relevant_segments = _filter_segments_by_time_frame(segments, time_frame)
+            if not relevant_segments:
+                return {"result": []}
+            # Aggregate all objects from relevant segments
+            all_objects = []
+            for segment in relevant_segments:
+                summary = segment.get("summary", {})
+                all_objects.extend(summary.get("objects", []))
+            return {"result": all_objects}
+
+        # Default: return all objects from all frames
         video_doc = collection.find_one({"video_id": video_id})
         if not video_doc or "frames" not in video_doc:
             return {"result": []}
@@ -639,3 +561,214 @@ class VideoToolService:
             return {"result": {"track_id": track_id, "stationary": stationary}}
 
         return {"result": "Please specify a valid question or parameters."}
+
+
+
+import re
+
+# async def get_segmented_object_details(self, args):
+#     """
+#     Fetches segmented video data from the video_details_segment collection and answers user questions
+#     about objects, colors, movements, and other analytics within specified time frames or segments.
+#     """
+#     from pymongo import MongoClient
+#     import json
+#     # Ensure args is a dict
+#     try:
+#         if isinstance(args, str):
+#             args = json.loads(args)
+#     except Exception:
+#         return {"result": "Invalid arguments: could not parse JSON."}
+#     if not isinstance(args, dict):
+#         return {"result": "Invalid arguments: args must be a dict or JSON string."}
+
+#     video_id = args.get("video_id")
+#     segment_duration = args.get("segment_duration")
+#     segment_index = args.get("segment_index")
+#     question = args.get("question", "")
+
+#     # Reference to the correct collection
+#     db = self.request.app.db if self.request and hasattr(self.request, 'app') and hasattr(self.request.app, 'db') else None
+#     if db is None:
+#         client = MongoClient(os.getenv("MONGO_URI"))
+#         db = client["algo_compliance_db_2"]
+#     video_details_collection_segment = db["video_details_segment"]
+
+#     # Build query for segment collection
+#     query = {"video_id": video_id}
+#     if segment_duration:
+#         query["segment_duration"] = segment_duration
+#     if segment_index is not None:
+#         query["segment_index"] = segment_index
+
+#     # Retrieve segments from MongoDB
+#     segments = list(video_details_collection_segment.find(query).sort("segment_index", 1))
+#     if not segments:
+#         return {"result": "No segmented data found for this video."}
+
+#     # Parse time frame from question if provided
+#     time_frame = _parse_time_frame_from_question(question)
+#     # If time frame is specified, filter segments based on time
+#     if time_frame:
+#         relevant_segments = _filter_segments_by_time_frame(segments, time_frame)
+#         if relevant_segments:
+#             segments = relevant_segments
+
+#     # Generate answer based on question and segments
+#     if question:
+#         return _generate_answer_from_segments(segments, question, time_frame)
+
+#     # Return all segment data if no specific question
+#     return {"result": {
+#         "video_id": video_id,
+#         "total_segments": len(segments),
+#         "segments": segments
+#     }}
+
+# # Helper to parse time frame from question
+
+def _parse_time_frame_from_question(question):
+    if not question:
+        return None
+    question_lower = question.lower()
+    # Pattern for "first X seconds"
+    first_pattern = r'first\s+(\d+(?:\.\d+)?)\s*seconds?'
+    match = re.search(first_pattern, question_lower)
+    if match:
+        duration = float(match.group(1))
+        return {"start_time": 0, "end_time": duration}
+    # Pattern for "last X seconds"
+    last_pattern = r'last\s+(\d+(?:\.\d+)?)\s*seconds?'
+    match = re.search(last_pattern, question_lower)
+    if match:
+        duration = float(match.group(1))
+        return {"type": "last", "duration": duration}
+    # Pattern for "between X-Y seconds" or "from X to Y seconds"
+    between_pattern = r'(?:between|from)\s+(\d+(?:\.\d+)?)\s*(?:to|-|and)\s+(\d+(?:\.\d+)?)\s*seconds?'
+    match = re.search(between_pattern, question_lower)
+    if match:
+        start_time = float(match.group(1))
+        end_time = float(match.group(2))
+        return {"start_time": start_time, "end_time": end_time}
+    # Pattern for "at X seconds" or "around X seconds"
+    at_pattern = r'(?:at|around)\s+(\d+(?:\.\d+)?)\s*seconds?'
+    match = re.search(at_pattern, question_lower)
+    if match:
+        time_point = float(match.group(1))
+        return {"start_time": max(0, time_point - 2.5), "end_time": time_point + 2.5}
+    return None
+
+# Helper to filter segments by time frame
+
+def _filter_segments_by_time_frame(segments, time_frame):
+    relevant_segments = []
+    for segment in segments:
+        summary = segment.get("summary", {})
+        segment_start = summary.get("start_time", 0)
+        segment_end = summary.get("end_time", 0)
+        if time_frame.get("type") == "last":
+            max_end_time = max(s.get("summary", {}).get("end_time", 0) for s in segments)
+            target_start = max_end_time - time_frame["duration"]
+            if segment_end >= target_start:
+                relevant_segments.append(segment)
+        else:
+            frame_start = time_frame.get("start_time", 0)
+            frame_end = time_frame.get("end_time", float('inf'))
+            if (segment_start <= frame_end and segment_end >= frame_start):
+                relevant_segments.append(segment)
+    return relevant_segments
+
+# # Helper to generate answer from segments and question
+
+# def _generate_answer_from_segments(segments, question, time_frame=None):
+#     if not segments:
+#         return {"result": "No relevant segments found for the specified time frame."}
+#     question_lower = question.lower()
+#     # Aggregate data from all relevant segments
+#     total_object_counts = {}
+#     total_detection_counts = {}
+#     all_objects = []
+#     time_range = {"start": float('inf'), "end": 0}
+#     for segment in segments:
+#         summary = segment.get("summary", {})
+#         # Update time range
+#         time_range["start"] = min(time_range["start"], summary.get("start_time", 0))
+#         time_range["end"] = max(time_range["end"], summary.get("end_time", 0))
+#         # Aggregate object counts
+#         object_counts = summary.get("object_counts", {})
+#         for obj_type, count in object_counts.items():
+#             total_object_counts[obj_type] = total_object_counts.get(obj_type, 0) + count
+#         # Aggregate detection counts
+#         detection_counts = summary.get("detection_counts", {})
+#         for obj_type, count in detection_counts.items():
+#             total_detection_counts[obj_type] = total_detection_counts.get(obj_type, 0) + count
+#         # Collect all objects
+#         all_objects.extend(summary.get("objects", []))
+#     # Generate specific answers based on question type
+#     if "how many" in question_lower:
+#         if "car" in question_lower:
+#             car_count = total_object_counts.get("car", 0)
+#             time_desc = _format_time_description(time_frame, time_range)
+#             return {"result": f"There are {car_count} cars detected {time_desc}."}
+#         elif "truck" in question_lower:
+#             truck_count = total_object_counts.get("truck", 0)
+#             time_desc = _format_time_description(time_frame, time_range)
+#             return {"result": f"There are {truck_count} trucks detected {time_desc}."}
+#         elif "object" in question_lower:
+#             total_objects = sum(total_object_counts.values())
+#             time_desc = _format_time_description(time_frame, time_range)
+#             return {"result": f"There are {total_objects} total objects detected {time_desc}."}
+#     elif "what" in question_lower and "color" in question_lower:
+#         # Analyze colors in the time frame
+#         colors = {}
+#         for obj in all_objects:
+#             color = obj.get("color", "unknown")
+#             obj_type = obj.get("object_type", "unknown")
+#             if obj_type not in colors:
+#                 colors[obj_type] = {}
+#             colors[obj_type][color] = colors[obj_type].get(color, 0) + 1
+#         time_desc = _format_time_description(time_frame, time_range)
+#         return {"result": {
+#             "message": f"Color analysis {time_desc}",
+#             "colors_by_type": colors
+#         }}
+#     elif "movement" in question_lower or "direction" in question_lower:
+#         # Analyze movement patterns
+#         movements = []
+#         for obj in all_objects:
+#             if "start_position" in obj and "end_position" in obj:
+#                 start_pos = obj["start_position"]
+#                 end_pos = obj["end_position"]
+#                 movement = {
+#                     "track_id": obj.get("track_id"),
+#                     "object_type": obj.get("object_type"),
+#                     "start_position": start_pos,
+#                     "end_position": end_pos,
+#                     "movement_x": end_pos["x"] - start_pos["x"],
+#                     "movement_y": end_pos["y"] - start_pos["y"]
+#                 }
+#                 movements.append(movement)
+#         time_desc = _format_time_description(time_frame, time_range)
+#         return {"result": {
+#             "message": f"Movement analysis {time_desc}",
+#             "movements": movements
+#         }}
+#     # Default response with summary
+#     time_desc = _format_time_description(time_frame, time_range)
+#     return {"result": {
+#         "message": f"Segment analysis {time_desc}",
+#         "time_range": time_range,
+#         "object_counts": total_object_counts,
+#         "detection_counts": total_detection_counts,
+#         "total_segments_analyzed": len(segments)
+#     }}
+
+# def _format_time_description(time_frame, actual_range):
+#     if not time_frame:
+#         return f"from {actual_range['start']:.1f}s to {actual_range['end']:.1f}s"
+#     if time_frame.get("type") == "last":
+#         return f"in the last {time_frame['duration']} seconds"
+#     else:
+#         start = time_frame.get("start_time", actual_range['start'])
+#         end = time_frame.get("end_time", actual_range['end'])
+#         return f"between {start:.1f}s and {end:.1f}s"

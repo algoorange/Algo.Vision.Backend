@@ -78,14 +78,16 @@ class ChatService:
                 tool_result = await video_tool_service.get_all_object_details(args)
             elif agent_name == "get_specific_object_type":
                 tool_result = await video_tool_service.get_specific_object_type(args)
-            elif agent_name == "count_left_right_moving_objects":
-                tool_result = await video_tool_service.count_left_right_moving_objects(args)
+            # elif agent_name == "count_left_right_moving_objects":
+            #     tool_result = await video_tool_service.count_left_right_moving_objects(args)
             elif agent_name == "get_traffic_congestion_details":
                 tool_result = await video_tool_service.get_traffic_congestion_details(args)
             elif agent_name == "object_position_confidence":
                 tool_result = await video_tool_service.object_position_confidence(args)
             elif agent_name == "get_all_object_direction":
                 tool_result = await video_tool_service.get_all_object_direction(args)
+            elif agent_name == "get_segmented_object_details":
+                tool_result = await video_tool_service.get_segmented_object_details(args)
             elif agent_name == "object_position_confidence_using_track_id":
                 if "frame_number" in args and args["frame_number"] is not None:
                     try:    
