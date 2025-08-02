@@ -217,6 +217,7 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
                         "model_name": "RTDETR",
                         "frame_number": fn,
                         "frame_time": round(fn / fps, 2),
+                        "color": obj.get("color", "unknown"),
                         # Include start/end tracking information for this track_id
                         "start_time": track_info.get("start_time"),
                         "end_time": track_info.get("end_time"),

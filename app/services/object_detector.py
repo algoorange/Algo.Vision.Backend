@@ -6,6 +6,7 @@ import numpy as np
 import torchvision.transforms as transforms
 from torchvision.models import detection
 import torchvision
+from app.utils.color_detection import detect_dominant_color
 # from app.services.crack_detector import predict_crack
 
 # Load YOLOv8 model
@@ -117,7 +118,7 @@ def detect_with_rtdetr(frame):
                 "source": "RTDETR"
             })
     return detections
-
+  
 def detect_with_faster_rcnn(frame):
     """Faster R-CNN detection"""
     detections = []
@@ -144,12 +145,18 @@ def detect_with_faster_rcnn(frame):
             x1, y1, x2, y2 = map(int, box)
             try:
                 label = COCO_CLASSES[label_id]
+                # --- Color Detection Integration ---
+                crop = frame[y1:y2, x1:x2]
+                color = detect_dominant_color(crop) if crop.size > 0 else "unknown"
                 detections.append({
                     "label": label,
                     "confidence": float(score),
                     "bbox": [x1, y1, x2 - x1, y2 - y1],
-                    "source": "Faster R-CNN"
+                    "source": "Faster R-CNN",
+                    "color": color,
+                    "object_crop": crop
                 })
+                print(f'{label} color: {color}')
             except:
                 print(f" -->>>>>>>>>> Faster R-CNN detections label_id: {label_id}")
                 print(f" -->>>>>>>>>> Faster R-CNN detections score: {score}")

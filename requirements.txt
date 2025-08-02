@@ -8,6 +8,11 @@ opencv-python>=4.11.0.86
 numpy>=1.24.0
 cython
 
+# Machine Learning for K-means color detection
+scikit-learn>=1.3.0
+webcolors>=1.13
+scipy>=1.10.0
+
 # Deep Learning ultralytics for YOLOv8
 ultralytics>=8.0.0 # YOLOv8 for object detection
 torch>=2.0.0 # PyTorch for U-Net
