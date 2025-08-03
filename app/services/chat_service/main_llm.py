@@ -31,20 +31,35 @@ You are a helpful assistant that can answer questions about the video.
 If the user asks about object counts, analytics, movements, or any question that requires database or video analysis, ALWAYS use the available tools/functions provided. Do NOT try to answer from your own knowledge—use a tool call for anything requiring data lookup or analytics.
 """
 
+import threading
+
+_session_memories = {}
+_session_lock = threading.Lock()
+
+def get_session_memory(session_id, llm):
+    with _session_lock:
+        if session_id not in _session_memories:
+            _session_memories[session_id] = ConversationSummaryBufferMemory(
+                llm=llm,
+                max_token_limit=200,
+                return_messages=True
+            )
+        return _session_memories[session_id]
+
 class ChatService:
-    def __init__(self, video_tool_service=None, llm_client=None, model_name=None, reformat_prompt=None, memory=None):
+    def __init__(self, session_id, video_tool_service=None, llm_client=None, model_name=None, reformat_prompt=None):
         """
-        ChatService for handling chat interactions and tool calls.
+        ChatService for handling chat interactions and tool calls, with session-based memory.
         """
+        self.session_id = session_id
         self.client = groq.Client(api_key=os.getenv("GROQ_API_KEY"))
         self.video_tool_service = video_tool_service
         self.llm_client = llm_client or self.client
         self.model_name = model_name or "llama-3.3-70b-versatile"
         self.reformat_prompt = reformat_prompt or "Please reformat the tool result for the user."
-        self.memory = memory or ConversationSummaryBufferMemory(
-            llm=self.client_wrapper(),
-            max_token_limit=200,
-            return_messages=True
+        self.memory = get_session_memory(
+            session_id=session_id,
+            llm=self.client_wrapper()
         )
 
     def client_wrapper(self):
@@ -111,7 +126,6 @@ class ChatService:
         tool_call = message.tool_calls[0]
         agent_name = tool_call.function.name
         args = tool_call.function.arguments if hasattr(tool_call.function, "arguments") else {}
-        tool_name = agent_name
 
         try:
             video_tool_service = VideoToolService(request=None)
@@ -125,6 +139,8 @@ class ChatService:
                 tool_result = await video_tool_service.object_position_confidence(args)
             elif agent_name == "get_all_object_direction":
                 tool_result = await video_tool_service.get_all_object_direction(args)
+            elif agent_name == "get_video_segment_details":
+                tool_result = await video_tool_service.get_video_segment_details(args)
             elif agent_name == "object_position_confidence_using_track_id":
                 if "frame_number" in args and args["frame_number"] is not None:
                     try:
@@ -143,8 +159,9 @@ class ChatService:
             reformat_prompt += (
                 "\nYour job is to present the tool result in a clear, concise, and user-friendly way. "
                 "Do not include raw JSON or technical fields. Use natural language and summarize the most important information for the user. "
-                "Format your answer using advanced Markdown for clarity and beauty: use bullet points, numbered lists, tables, headings, bold, italics, code blocks, and LaTeX math where appropriate. "
+                "Format your answer using advanced Markdown for clarity and beauty: use bullet points, numbered lists, tables, headings, bold, italics where appropriate. ignore the code blocks, and LaTeX math blocks."
                 "Make the output visually appealing and easy to read."
+                "show only the final answer, do not show the technical fields and technical results."
             )
 
             retries = 3

@@ -32,11 +32,15 @@ async def query_llm(data: dict = Body(...)):
     }
 
 # New endpoint for direct LLM chat
+from uuid import uuid4
+
 @router.post("/")
 async def llm_chat(data: dict = Body(...)):
     question = data.get("question")
+    session_id = data.get("session_id") or str(uuid4())
     if not question:
         return {"error": "Question is required"}
-    chat_service = ChatService()
+    chat_service = ChatService(session_id=session_id)
     result = await chat_service.chat_query(question)
-    return {"answer": result}
+    print("final result ", result)
+    return {"answer": result, "session_id": session_id}

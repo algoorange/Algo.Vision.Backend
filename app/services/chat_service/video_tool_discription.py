@@ -10,132 +10,99 @@ video_tool_description = [
         "type": "function",
         "function": {
             "name": "get_all_object_details",
-            "description": "Retrieve detailed information about every detected object in a given video, including their frame, position, and complete tracking details. This tool supports both general object listing and advanced time-specific or question-based analysis. If the user's question includes a time frame (e.g., 'first 10 seconds', 'last 30 seconds', 'between 5-15 seconds') or a specific natural language query, the tool will intelligently parse the question, fetch relevant objects from segmented video analysis, and provide detailed answers about counts, colors, movements, and more within the specified time range. Use this tool for both general and time-specific object queries, including temporal analytics and segment-based insights.",
+            "description": "Returns specific analytics about detected and tracked objects in a video, based on structured flags. This tool can return the total object count, unique objects by track ID, confidence values, and object types either globally or for a specific track ID. It is used to answer detailed questions about object tracking in a video without relying on natural language interpretation.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "video_id": {
                         "type": "string",
-                        "description": "The unique video ID to retrieve object details for (from your database)."
+                        "description": "The unique ID of the video from which object data should be retrieved. Required for all queries."
                     },
-                    "question": {
-                        "type": "string",
-                        "description": "Optional: Natural language question that may include time frame references (e.g., 'How many cars in the first 10 seconds?', 'What colors appear between 5-15 seconds?', 'Show movement in the last 30 seconds'). The tool will parse time frames and generate appropriate answers."
+                    "get_count": {
+                        "type": "boolean",
+                        "description": "Set to true to return the count of unique tracked objects (based on distinct track IDs)."
                     },
-                    "segment_duration": {
-                        "type": "number",
-                        "description": "Optional: Filter segments by specific duration in seconds (5.0, 10.0, 30.0, or 60.0). If not provided, returns all segment durations.",
-                        "enum": [5.0, 10.0, 30.0, 60.0]
+                    "get_unique_objects": {
+                        "type": "boolean",
+                        "description": "Set to true to return a list of unique tracked objects with their track_id, object_type, and confidence."
                     },
-                    "segment_index": {
-                        "type": "integer",
-                        "description": "Optional: Get specific segment by index within the chosen duration. If not provided, returns all segments."
-                    }
-                },
-                "required": ["video_id"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_specific_object_type",
-            "description": "Retrieve detailed information about all detected objects of a specific type in a given video, including their frame and position details. Use this tool when the user asks for a list or details of all objects of a specific type in a video.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "video_id": {
-                        "type": "string",
-                        "description": "The unique video ID to get object details for (from your database).",
+                    "get_frame_track_ids": {
+                        "type": "boolean",
+                        "description": "Set to true to return a list of track IDs for a specific frame."
                     },
-                    "object_type": {
-                        "type": "string",
-                        "description": "The type of object to get object details for (e.g., 'car', 'truck').",
-                    }
-                },
-                "required": ["video_id", "object_type"]
-            }
-        }
-    },
-        {
-        "type": "function",
-        "function": {
-            "name": "get_traffic_congestion_details",
-            "description": "Retrieve detailed information about traffic congestion, crowding, and object counts in a given video. The tool returns the total object count and unique object count by category. Use this tool when the user asks for a list or details of objects in a video, or questions about traffic congestion or crowding.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "video_id": {
-                        "type": "string",
-                        "description": "The unique video ID to get object details for (from your database).",
+                    "get_confidences": {
+                        "type": "boolean",
+                        "description": "Set to true to return the confidence score(s) for detected objects. If 'track_id' is provided, returns confidence for that specific object only."
                     },
-                    "question": {
-                        "type": "string",
-                        "description": "The natural language question about traffic congestion, crowding, or object counts in a video.",
-                    }
-                },
-                "required": ["video_id", "question"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "object_position_confidence_using_track_id",
-            "description": "Retrieve the position, confidence, object type, and movement direction (towards or away from the camera) for the object with the given track_id in a specific frame. Use this tool when the user asks for a list or details of all objects of a specific type in a video.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "video_id": {
-                        "type": "string",
-                        "description": "The unique video ID to get object details for (from your database).",
+                    "get_object_types": {
+                        "type": "boolean",
+                        "description": "Set to true to return object type(s). If 'track_id' is provided, returns the object type for that specific track only."
                     },
-                    "track_id": {
-                        "type": "string",
-                        "description": "The track ID of the object to get object details for (from your database).",
+                    "get_frame_object_count": {
+                        "type": "boolean",
+                        "description": "Set to true to get count of objects in a specific frame."
                     },
                     "frame_number": {
                         "type": "integer",
-                        "description": "The frame number in the video to get object details for."
-                    }
-                },
-                "required": ["video_id", "track_id", "frame_number"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "count_left_right_moving_objects",
-            "description": "Get the count of objects going left and right across the video. Use this tool when the user asks for a list or details of all objects of a specific type in a video.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "video_id": {
-                        "type": "string",
-                        "description": "The unique video ID to get object details for (from your database).",
+                        "description": "Frame number to query for object count. Required if get_frame_object_count is true."
+                    },
+                    "track_id": {
+                        "type": "integer",
+                        "description": "Optional. Use to get object type or confidence specific to this tracked object."
                     }
                 },
                 "required": ["video_id"]
             }
         }
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_all_object_direction",
-            "description": "Get the direction (east, west, north, south) of all objects in a video using their position in the video. Use this tool when the user asks for a list or details of all objects of a specific type in a video. The tool takes a video_id as a parameter and returns the direction of all objects in that video.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "video_id": {
-                        "type": "string",
-                        "description": "The unique video ID to get object details for (from your database).",
-                    }
-                },
-                "required": ["video_id"]
-            }
+{
+  "type": "function",
+  "function": {
+    "name": "get_video_segment_details",
+    "description": "Used to answer questions about specific time-based segments of a video. Supports queries like 'how many objects were present in the first 5 seconds', 'what object types appeared between 0 and 10 seconds', 'give me the frame range of object 23', and 'what was the position of a car at the start and end of the video'. This tool analyzes fixed-duration segments of the video (e.g., 5s, 10s, 30s) and returns detailed insights about tracked objects.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "video_id": {
+          "type": "string",
+          "description": "The unique ID of the video to analyze. This ID is used to retrieve video data from the database."
+        },
+        "segment_duration": {
+          "type": ["number", "string"],
+          "description": "The duration (in seconds) of each segment of the video. Must match the segmentation duration used during preprocessing. Example: 5 means every 5 seconds is a segment."
+        },
+        "count_within_seconds": {
+          "type": ["number", "string"],
+          "description": "Time range (in seconds) to count object detections from the beginning of the video. Accepts values like 5, 10, 60 (1 minute)."
+        },
+        "get_segment_object_counts": {
+          "type": "boolean",
+          "description": "Set to true to return the number of unique objects (by track ID) present in each segment. Useful for counting how many objects were seen in a time range like 'first 5 seconds'."
+        },
+        "get_segment_object_types": {
+          "type": "boolean",
+          "description": "Set to true to get a list of object types (like car, person, truck, etc.) that appeared in each segment."
+        },
+        "get_track_frame_range": {
+          "type": "boolean",
+          "description": "Returns the first and last frame number where the object with the specified track ID appears."
+        },
+        "get_track_position_range": {
+          "type": "boolean",
+          "description": "Returns the start and end position coordinates (x, y) of a specific tracked object by its track ID."
+        },
+        "get_track_time_range": {
+          "type": "boolean",
+          "description": "Returns the start and end time (in seconds) when a specific object appeared in the video."
+        },
+        "track_id": {
+          "type": "string",
+          "description": "The unique track ID of the object to retrieve details for (required for track-level queries such as time, frame, or position range)."
         }
+      },
+      "required": ["video_id"]
     }
-
-]
+  }
+}
+ 
+    ]
