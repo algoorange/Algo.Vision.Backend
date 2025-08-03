@@ -1,15 +1,36 @@
 from pymongo import MongoClient
 import os
 import json
+import re
+from langchain.memory import ConversationBufferMemory
 
 client = MongoClient(os.getenv("MONGO_URI"))
 db = client["algo_compliance_db_2"]
 collection = db["video_details"]
-# video_details_segment = db["video_details_segment"]
+video_details_segment = db["video_details_segment"]
+
+class ChatMemoryStore:
+    """Simple in-memory user memory store (not persistent)."""
+    def __init__(self):
+        self.memories = {}
+    def get_user_memory(self, user_id):
+        if user_id not in self.memories:
+            self.memories[user_id] = ConversationBufferMemory(return_messages=True)
+        return self.memories[user_id]
+    def set_user_memory(self, user_id, memory):
+        self.memories[user_id] = memory
+
+chat_memory_store = ChatMemoryStore()
 
 class VideoToolService:
     def __init__(self, request):
         self.request = request
+        self.db = request.app.db if request and hasattr(request, 'app') and hasattr(request.app, 'db') else db
+
+    def get_chat_memory(self, user_id):
+        return chat_memory_store.get_user_memory(user_id)
+    def set_chat_memory(self, user_id, memory):
+        chat_memory_store.set_user_memory(user_id, memory)
 
 
     async def get_all_object_details(self, args):
@@ -23,9 +44,6 @@ class VideoToolService:
         Returns:
             dict: List of all objects (dicts) from all frames or segments.
         """
-        import json
-        from pymongo import MongoClient
-        import os
 
         if isinstance(args, str):
             args = json.loads(args)
@@ -37,14 +55,7 @@ class VideoToolService:
 
         if time_frame:
             # Use segmented collection
-            # Use request.app.db if available, else fallback to env
-            db = self.request.app.db if self.request and hasattr(self.request, 'app') and hasattr(self.request.app, 'db') else None
-            if db is None:
-                client = MongoClient(os.getenv("MONGO_URI"))
-                db = client["algo_compliance_db_2"]
-            video_details_collection_segment = db["video_details_segment"]
-
-            segments = list(video_details_collection_segment.find({"video_id": video_id}).sort("segment_index", 1))
+            segments = list(video_details_segment.find({"video_id": video_id}).sort("segment_index", 1))
             if not segments:
                 return {"result": []}
             # Filter segments by time frame
@@ -77,7 +88,6 @@ class VideoToolService:
         Returns:
             dict: List of dicts with selected fields for each object of the specified type or track_id.
         """
-        import json
         if args is None:
             args = {}
         elif isinstance(args, str):
@@ -222,36 +232,6 @@ class VideoToolService:
         # 4. Default
         return {"result": "Sorry, I cannot answer this question yet."}    
 
-    # async def object_position_confidence(self, args):
-        """
-        Returns position and confidence for all objects of a specific type in a specific frame.
-        Args:
-            video_id (str): The video ID to search for.
-            object_type (str): The type of object to filter (e.g., 'car', 'person').
-            frame_number (int): The frame number to search in.
-        Returns:
-            list: List of dicts with position and confidence for each matching object.
-        """
-        if isinstance(args, str):
-            args = json.loads(args)
-        video_id = args.get("video_id")
-        object_type = args.get("object_type")
-        frame_number = args.get("frame_number")
-        video_doc = collection.find_one({"video_id": video_id})
-        if not video_doc or "frames" not in video_doc:
-            return {"result": []}
-        for frame in video_doc["frames"]:
-            if frame.get("frame_number") == frame_number:
-                results = []
-                for obj in frame.get("objects", []):
-                    if obj.get("object_type") == object_type:
-                        results.append({
-                            "position": obj.get("position"),
-                            "confidence": obj.get("confidence")
-                        })
-                return {"result": results}
-        return {"result": []}    
-
 
 #at testing phase
     async def get_all_object_direction(self, args):
@@ -375,41 +355,6 @@ class VideoToolService:
         print(result)
         return {"result": result}
         
-#parcially working 
-    # async def count_left_right_moving_objects(self, args):
-        """
-        Counts how many unique objects move left and right across the video.
-        Returns: dict with counts and lists of track_ids for left and right movers.
-        """
-        if isinstance(args, str):
-            args = json.loads(args)
-        video_id = args.get("video_id")
-        video_doc = collection.find_one({"video_id": video_id})
-        if not video_doc or "frames" not in video_doc:
-            return {"result": {"left": 0, "right": 0, "left_ids": [], "right_ids": []}}
-        # Gather all positions for each track_id
-        track_positions = {}
-        for frame in video_doc["frames"]:
-            frame_number = frame.get("frame_number")
-            for obj in frame.get("objects", []):
-                tid = obj.get("track_id")
-                pos = obj.get("position")
-                if tid and pos and all(k in pos for k in ("x", "y", "x1", "y1")):
-                    cx = (pos["x"] + pos["x1"]) / 2
-                    track_positions.setdefault(tid, []).append((frame_number, cx))
-        left_ids = []
-        right_ids = []
-        for tid, positions in track_positions.items():
-            positions.sort()  # sort by frame_number
-            if len(positions) >= 2:
-                x_start = positions[0][1]
-                x_end = positions[-1][1]
-                if x_end < x_start:
-                    left_ids.append(tid)
-                elif x_end > x_start:
-                    right_ids.append(tid)
-        return {"result": {"left": len(left_ids), "right": len(right_ids), "left_ids": left_ids, "right_ids": right_ids}}
-
 
 #parcially working 
     async def object_position_confidence(self, args):
@@ -423,8 +368,6 @@ class VideoToolService:
         Returns:
             dict: List of dicts with position and confidence for each matching object.
         """
-        import re
-        import json
         if isinstance(args, str):
             args = json.loads(args)
 
@@ -562,71 +505,7 @@ class VideoToolService:
 
         return {"result": "Please specify a valid question or parameters."}
 
-
-
-import re
-
-# async def get_segmented_object_details(self, args):
-#     """
-#     Fetches segmented video data from the video_details_segment collection and answers user questions
-#     about objects, colors, movements, and other analytics within specified time frames or segments.
-#     """
-#     from pymongo import MongoClient
-#     import json
-#     # Ensure args is a dict
-#     try:
-#         if isinstance(args, str):
-#             args = json.loads(args)
-#     except Exception:
-#         return {"result": "Invalid arguments: could not parse JSON."}
-#     if not isinstance(args, dict):
-#         return {"result": "Invalid arguments: args must be a dict or JSON string."}
-
-#     video_id = args.get("video_id")
-#     segment_duration = args.get("segment_duration")
-#     segment_index = args.get("segment_index")
-#     question = args.get("question", "")
-
-#     # Reference to the correct collection
-#     db = self.request.app.db if self.request and hasattr(self.request, 'app') and hasattr(self.request.app, 'db') else None
-#     if db is None:
-#         client = MongoClient(os.getenv("MONGO_URI"))
-#         db = client["algo_compliance_db_2"]
-#     video_details_collection_segment = db["video_details_segment"]
-
-#     # Build query for segment collection
-#     query = {"video_id": video_id}
-#     if segment_duration:
-#         query["segment_duration"] = segment_duration
-#     if segment_index is not None:
-#         query["segment_index"] = segment_index
-
-#     # Retrieve segments from MongoDB
-#     segments = list(video_details_collection_segment.find(query).sort("segment_index", 1))
-#     if not segments:
-#         return {"result": "No segmented data found for this video."}
-
-#     # Parse time frame from question if provided
-#     time_frame = _parse_time_frame_from_question(question)
-#     # If time frame is specified, filter segments based on time
-#     if time_frame:
-#         relevant_segments = _filter_segments_by_time_frame(segments, time_frame)
-#         if relevant_segments:
-#             segments = relevant_segments
-
-#     # Generate answer based on question and segments
-#     if question:
-#         return _generate_answer_from_segments(segments, question, time_frame)
-
-#     # Return all segment data if no specific question
-#     return {"result": {
-#         "video_id": video_id,
-#         "total_segments": len(segments),
-#         "segments": segments
-#     }}
-
-# # Helper to parse time frame from question
-
+###########segmentation tools###########
 def _parse_time_frame_from_question(question):
     if not question:
         return None
@@ -678,97 +557,3 @@ def _filter_segments_by_time_frame(segments, time_frame):
                 relevant_segments.append(segment)
     return relevant_segments
 
-# # Helper to generate answer from segments and question
-
-# def _generate_answer_from_segments(segments, question, time_frame=None):
-#     if not segments:
-#         return {"result": "No relevant segments found for the specified time frame."}
-#     question_lower = question.lower()
-#     # Aggregate data from all relevant segments
-#     total_object_counts = {}
-#     total_detection_counts = {}
-#     all_objects = []
-#     time_range = {"start": float('inf'), "end": 0}
-#     for segment in segments:
-#         summary = segment.get("summary", {})
-#         # Update time range
-#         time_range["start"] = min(time_range["start"], summary.get("start_time", 0))
-#         time_range["end"] = max(time_range["end"], summary.get("end_time", 0))
-#         # Aggregate object counts
-#         object_counts = summary.get("object_counts", {})
-#         for obj_type, count in object_counts.items():
-#             total_object_counts[obj_type] = total_object_counts.get(obj_type, 0) + count
-#         # Aggregate detection counts
-#         detection_counts = summary.get("detection_counts", {})
-#         for obj_type, count in detection_counts.items():
-#             total_detection_counts[obj_type] = total_detection_counts.get(obj_type, 0) + count
-#         # Collect all objects
-#         all_objects.extend(summary.get("objects", []))
-#     # Generate specific answers based on question type
-#     if "how many" in question_lower:
-#         if "car" in question_lower:
-#             car_count = total_object_counts.get("car", 0)
-#             time_desc = _format_time_description(time_frame, time_range)
-#             return {"result": f"There are {car_count} cars detected {time_desc}."}
-#         elif "truck" in question_lower:
-#             truck_count = total_object_counts.get("truck", 0)
-#             time_desc = _format_time_description(time_frame, time_range)
-#             return {"result": f"There are {truck_count} trucks detected {time_desc}."}
-#         elif "object" in question_lower:
-#             total_objects = sum(total_object_counts.values())
-#             time_desc = _format_time_description(time_frame, time_range)
-#             return {"result": f"There are {total_objects} total objects detected {time_desc}."}
-#     elif "what" in question_lower and "color" in question_lower:
-#         # Analyze colors in the time frame
-#         colors = {}
-#         for obj in all_objects:
-#             color = obj.get("color", "unknown")
-#             obj_type = obj.get("object_type", "unknown")
-#             if obj_type not in colors:
-#                 colors[obj_type] = {}
-#             colors[obj_type][color] = colors[obj_type].get(color, 0) + 1
-#         time_desc = _format_time_description(time_frame, time_range)
-#         return {"result": {
-#             "message": f"Color analysis {time_desc}",
-#             "colors_by_type": colors
-#         }}
-#     elif "movement" in question_lower or "direction" in question_lower:
-#         # Analyze movement patterns
-#         movements = []
-#         for obj in all_objects:
-#             if "start_position" in obj and "end_position" in obj:
-#                 start_pos = obj["start_position"]
-#                 end_pos = obj["end_position"]
-#                 movement = {
-#                     "track_id": obj.get("track_id"),
-#                     "object_type": obj.get("object_type"),
-#                     "start_position": start_pos,
-#                     "end_position": end_pos,
-#                     "movement_x": end_pos["x"] - start_pos["x"],
-#                     "movement_y": end_pos["y"] - start_pos["y"]
-#                 }
-#                 movements.append(movement)
-#         time_desc = _format_time_description(time_frame, time_range)
-#         return {"result": {
-#             "message": f"Movement analysis {time_desc}",
-#             "movements": movements
-#         }}
-#     # Default response with summary
-#     time_desc = _format_time_description(time_frame, time_range)
-#     return {"result": {
-#         "message": f"Segment analysis {time_desc}",
-#         "time_range": time_range,
-#         "object_counts": total_object_counts,
-#         "detection_counts": total_detection_counts,
-#         "total_segments_analyzed": len(segments)
-#     }}
-
-# def _format_time_description(time_frame, actual_range):
-#     if not time_frame:
-#         return f"from {actual_range['start']:.1f}s to {actual_range['end']:.1f}s"
-#     if time_frame.get("type") == "last":
-#         return f"in the last {time_frame['duration']} seconds"
-#     else:
-#         start = time_frame.get("start_time", actual_range['start'])
-#         end = time_frame.get("end_time", actual_range['end'])
-#         return f"between {start:.1f}s and {end:.1f}s"

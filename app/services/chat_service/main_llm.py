@@ -8,6 +8,7 @@ from groq.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionToolMessageParam,
 )
+from langchain.memory import ConversationBufferMemory
 from app.services.chat_service.video_tool_discription import video_tool_description
 from app.services.chat_service.video_tool_service import VideoToolService
 
@@ -21,7 +22,7 @@ You are a helpful assistant that can answer questions about the video.
 """
 
 class ChatService:
-    def __init__(self, video_tool_service=None, llm_client=None, model_name=None, reformat_prompt=None):
+    def __init__(self, video_tool_service=None, llm_client=None, model_name=None, reformat_prompt=None, memory=None):
         """
         ChatService for handling chat interactions and tool calls.
         Args:
@@ -29,12 +30,14 @@ class ChatService:
             llm_client: Optional, client for LLM follow-up (defaults to groq.Client)
             model_name: Optional, model name for follow-up LLM calls
             reformat_prompt: Optional, prompt for result reformatting
+            memory: Optional, ConversationBufferMemory for chat history
         """
         self.client = groq.Client(api_key=os.getenv("GROQ_API_KEY"))
         self.video_tool_service = video_tool_service
         self.llm_client = llm_client or self.client
         self.model_name = model_name or "llama-3.3-70b-versatile"
         self.reformat_prompt = reformat_prompt or "Please reformat the tool result for the user."
+        self.memory = memory or ConversationBufferMemory(return_messages=True)
 
     async def chat_query(self, query: str):
         """
@@ -78,16 +81,12 @@ class ChatService:
                 tool_result = await video_tool_service.get_all_object_details(args)
             elif agent_name == "get_specific_object_type":
                 tool_result = await video_tool_service.get_specific_object_type(args)
-            # elif agent_name == "count_left_right_moving_objects":
-            #     tool_result = await video_tool_service.count_left_right_moving_objects(args)
             elif agent_name == "get_traffic_congestion_details":
                 tool_result = await video_tool_service.get_traffic_congestion_details(args)
             elif agent_name == "object_position_confidence":
                 tool_result = await video_tool_service.object_position_confidence(args)
             elif agent_name == "get_all_object_direction":
                 tool_result = await video_tool_service.get_all_object_direction(args)
-            elif agent_name == "get_segmented_object_details":
-                tool_result = await video_tool_service.get_segmented_object_details(args)
             elif agent_name == "object_position_confidence_using_track_id":
                 if "frame_number" in args and args["frame_number"] is not None:
                     try:    

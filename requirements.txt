@@ -56,5 +56,9 @@ pymongo>=4.0.0
 
 shapely
 
+#google-adk
 google-adk==1.6.1
 litellm
+
+#langchain
+langchain

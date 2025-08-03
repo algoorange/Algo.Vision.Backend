@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Body
 from app.services import query_engine
-from app.utils.embeddings import embedder, embedding_index, embedding_metadata
 from app.services.chat_service.main_llm import ChatService
-import asyncio
+from app.services.chat_service.video_tool_service import VideoToolService
 
 router = APIRouter()
 
@@ -37,6 +36,10 @@ async def llm_chat(data: dict = Body(...)):
     question = data.get("question")
     if not question:
         return {"error": "Question is required"}
-    chat_service = ChatService()
+    user_id = "user1"  # TODO: Replace with real user/session ID in production
+    video_tool_service = VideoToolService(request=None)
+    memory = video_tool_service.get_chat_memory(user_id)
+    chat_service = ChatService(memory=memory)
     result = await chat_service.chat_query(question)
+    video_tool_service.set_chat_memory(user_id, chat_service.memory)
     return {"answer": result}
