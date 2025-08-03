@@ -2,35 +2,16 @@ from pymongo import MongoClient
 import os
 import json
 import re
-from langchain.memory import ConversationBufferMemory
 
 client = MongoClient(os.getenv("MONGO_URI"))
 db = client["algo_compliance_db_2"]
 collection = db["video_details"]
 video_details_segment = db["video_details_segment"]
 
-class ChatMemoryStore:
-    """Simple in-memory user memory store (not persistent)."""
-    def __init__(self):
-        self.memories = {}
-    def get_user_memory(self, user_id):
-        if user_id not in self.memories:
-            self.memories[user_id] = ConversationBufferMemory(return_messages=True)
-        return self.memories[user_id]
-    def set_user_memory(self, user_id, memory):
-        self.memories[user_id] = memory
-
-chat_memory_store = ChatMemoryStore()
-
 class VideoToolService:
     def __init__(self, request):
         self.request = request
         self.db = request.app.db if request and hasattr(request, 'app') and hasattr(request.app, 'db') else db
-
-    def get_chat_memory(self, user_id):
-        return chat_memory_store.get_user_memory(user_id)
-    def set_chat_memory(self, user_id, memory):
-        chat_memory_store.set_user_memory(user_id, memory)
 
 
     async def get_all_object_details(self, args):

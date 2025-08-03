@@ -26,6 +26,10 @@ torchaudio
 sentence-transformers>=2.2.2 # Generate the embeddings of the video
 spacy>=3.7.2
 
+# LLM Orchestration
+langchain>=0.1.14
+langchain_groq
+
 
 # Vector Search
 faiss-cpu>=1.7.4
@@ -59,6 +63,3 @@ shapely
 #google-adk
 google-adk==1.6.1
 litellm
-
-#langchain
-langchain
