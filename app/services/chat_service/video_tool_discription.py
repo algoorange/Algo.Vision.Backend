@@ -34,9 +34,13 @@ video_tool_description = [
           "type": "boolean",
           "description": "Set to true to retrieve confidence scores. If 'track_id' is provided, it returns confidence for that specific tracked object."
         },
+        "get_object_color": {
+          "type": "boolean",
+          "description": "Set to true to retrieve object color. If 'track_id' is provided, it returns the color for that specific tracked object. if the track id and frame number is provided, it returns the color for that specific tracked object in that specific frame."
+        },
         "get_object_types": {
           "type": "boolean",
-          "description": "Set to true to retrieve object types. If 'track_id' is provided, it returns the object type for that specific tracked object."
+          "description": "Set to true to retrieve object types. If 'track_id' is provided, it returns the object type for that specific tracked object. if the track id and frame number is provided, it returns the object type for that specific tracked object in that specific frame."
         },
         "get_frame_object_count": {
           "type": "boolean",
@@ -100,12 +104,24 @@ video_tool_description = [
           "type": "boolean",
           "description": "set true to get the start and end time (in seconds) when a specific object appeared in the video."
         },
+        "time_range_start": {
+          "type": ["number", "string"],
+          "description": "Start of the time range (in seconds) to filter objects. Example: 10"
+        },
+        "time_range_end": {
+          "type": ["number", "string"],
+          "description": "End of the time range (in seconds). Example: 30. Use this along with time_range_start to get objects between times."
+        },
+        "last_n_seconds": {
+          "type": ["number", "string"],
+          "description": "Retrieve data from only the last N seconds of the video (e.g., 5, 10, 30). Ignored if time_range_start/time_range_end is used."
+        },
         "track_id": {
           "type": "string",
           "description": "The unique track ID of the object to retrieve details for (required for track-level queries such as time, frame, or position range)."
         }
       },
-      "required": ["video_id", "track_id"]
+      "required": ["video_id"]
     }
   }
 }

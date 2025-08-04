@@ -45,6 +45,7 @@ class VideoToolService:
         get_object_types = args.get("get_object_types", False)
         get_frame_object_count = args.get("get_frame_object_count", False)
         get_position_by_frame_and_track = args.get("get_position_by_frame_and_track", False)
+        get_object_color = args.get("get_object_color", False)
         get_frame_track_ids = args.get("get_frame_track_ids", False)  # ✅ NEW FLAG
         frame_number = args.get("frame_number")
         track_id = args.get("track_id")
@@ -141,6 +142,68 @@ class VideoToolService:
 
             results["positions"] = positions
 
+        if get_object_color:
+            if track_id is not None and frame_number is not None:
+                # Both track_id and frame_number provided: filter by both
+                objects = [
+                    obj for obj in all_objects
+                    if str(obj.get("track_id")) == str(track_id) and int(obj.get("frame_number")) == int(frame_number)
+                ]
+                colors = list({obj.get("color") for obj in objects if "color" in obj})
+                results["track_id"] = track_id
+                results["frame_number"] = frame_number
+                results["color"] = colors
+            elif track_id is not None:
+                # Only track_id provided
+                objects = [obj for obj in all_objects if str(obj.get("track_id")) == str(track_id)]
+                colors = list({obj.get("color") for obj in objects if "color" in obj})
+                results["track_id"] = track_id
+                results["color"] = colors
+            elif frame_number is not None:
+                # Only frame_number provided
+                objects = [obj for obj in all_objects if int(obj.get("frame_number")) == int(frame_number)]
+                # Return all unique (object_type, track_id, color) tuples
+                details = [
+                    {
+                        "object_type": obj.get("object_type"),
+                        "track_id": obj.get("track_id"),
+                        "color": obj.get("color")
+                    }
+                    for obj in objects if "color" in obj and "object_type" in obj and "track_id" in obj
+                ]
+                results["frame_number"] = frame_number
+                results["object_details"] = details
+            elif args.get("object_type") and args.get("color"):
+                # Query for count of objects of a specific color and type (e.g., red cars)
+                object_type_query = str(args.get("object_type")).strip().lower()
+                color_query = str(args.get("color")).strip().lower()
+                matching_track_ids = {
+                    str(obj["track_id"])
+                    for obj in all_objects
+                    if str(obj.get("object_type", "")).strip().lower() == object_type_query
+                        and str(obj.get("color", "")).strip().lower() == color_query
+                        and "track_id" in obj
+                }
+                results[f"{color_query}_{object_type_query}_count"] = len(matching_track_ids)
+                results[f"{color_query}_{object_type_query}_track_ids"] = list(matching_track_ids)
+            elif args.get("color") and not any([args.get("object_type"), args.get("track_id"), args.get("frame_number")]):
+                # Only color provided: return breakdown by object type
+                color_query = str(args.get("color")).strip().lower()
+                type_to_tracks = {}
+                for obj in all_objects:
+                    if str(obj.get("color", "")).strip().lower() == color_query and "object_type" in obj and "track_id" in obj:
+                        obj_type = str(obj.get("object_type")).strip().lower()
+                        if obj_type not in type_to_tracks:
+                            type_to_tracks[obj_type] = set()
+                        type_to_tracks[obj_type].add(str(obj["track_id"]))
+                # Format result: e.g., { 'car': 10, 'truck': 2 }
+                results[f"{color_query}_count"] = {k: len(v) for k, v in type_to_tracks.items()}
+                results[f"{color_query}_track_ids"] = {k: list(v) for k, v in type_to_tracks.items()}
+            else:
+                # Neither provided: all unique colors in the video
+                colors = list({obj.get("color") for obj in all_objects if "color" in obj})
+                results["colors"] = colors
+
         # ✅ Object types
         if get_object_types:
             if track_id is not None and frame_number is not None:
@@ -164,14 +227,14 @@ class VideoToolService:
                 objects = [obj for obj in all_objects if int(obj.get("frame_number")) == int(frame_number)]
                 types = list({obj.get("object_type") for obj in objects if "object_type" in obj})
                 results["frame_number"] = frame_number
-                results["object_types"] = types
+                results["object_types"] = types   
             else:
                 # Neither provided: all unique types in the video
                 types = list({obj.get("object_type") for obj in all_objects if "object_type" in obj})
                 results["object_types"] = types
 
         # ✅ Default fallback if no flags
-        if not any([get_count, get_unique, get_confidences, get_object_types, get_frame_object_count, get_frame_track_ids, get_position_by_frame_and_track]):
+        if not any([get_count, get_unique, get_confidences, get_object_types, get_frame_object_count, get_frame_track_ids, get_position_by_frame_and_track, get_object_color]):
             results["result"] = self.filter_objects(
                 all_objects, fields=["object_type", "track_id", "confidence"]
             )
@@ -247,6 +310,9 @@ class VideoToolService:
         get_track_position_range = to_bool(args.get("get_track_position_range", False))
        
         count_within_seconds = float(args.get("count_within_seconds", 0))
+        time_range_start = args.get("time_range_start")
+        time_range_end = args.get("time_range_end")
+        last_n_seconds = args.get("last_n_seconds")
         track_id = args.get("track_id")
 
         if not video_id:
@@ -294,7 +360,7 @@ class VideoToolService:
                 all_track_ids.update(track_ids)
             result["total_unique_objects"] = len(all_track_ids)
 
-        # === 3. Count objects within N seconds ===
+        # === 3. Count objects within N seconds (legacy) ===
         if count_within_seconds > 0:
             unique_track_ids_by_type = {}
             total_detections = 0
@@ -321,6 +387,74 @@ class VideoToolService:
                 "total_unique_objects": total_unique_objects,
                 "total_detections": total_detections
             }
+
+        # === 3b. Flexible time-based object queries ===
+        # Handles: 'last N seconds', 'between A and B seconds', 'after X seconds'
+        time_query_result = None
+        # Compute video end time if needed
+        video_end_time = None
+        if segments:
+            last_segment = segments[-1]
+            video_end_time = last_segment.get("summary", {}).get("end_time")
+            if video_end_time is None:
+                # fallback: try segment duration * number of segments
+                video_end_time = (last_segment.get("segment_index", len(segments)-1) + 1) * segment_duration
+        # Determine time window
+        window_start = None
+        window_end = None
+        if last_n_seconds is not None:
+            try:
+                last_n_seconds = float(last_n_seconds)
+                if video_end_time is not None:
+                    window_start = max(0, video_end_time - last_n_seconds)
+                    window_end = video_end_time
+            except Exception:
+                pass
+        elif time_range_start is not None or time_range_end is not None:
+            try:
+                window_start = float(time_range_start) if time_range_start is not None else 0
+                window_end = float(time_range_end) if time_range_end is not None else video_end_time
+            except Exception:
+                pass
+        # Only run if a valid window is set
+        if window_start is not None and window_end is not None and window_end > window_start:
+            unique_track_ids_by_type = {}
+            total_detections = 0
+            object_presence = {}
+            for segment in segments:
+                objects = segment.get("summary", {}).get("objects", [])
+                for obj in objects:
+                    if isinstance(obj, dict) and "track_id" in obj:
+                        obj_type = obj.get("object_type", "unknown")
+                        track_id = obj["track_id"]
+                        # Use object's start_time and end_time for presence
+                        o_start = obj.get("start_time", 0)
+                        o_end = obj.get("end_time", 0)
+                        # Check if object was present at any point in the window
+                        if o_end >= window_start and o_start <= window_end:
+                            if obj_type not in unique_track_ids_by_type:
+                                unique_track_ids_by_type[obj_type] = set()
+                            unique_track_ids_by_type[obj_type].add(track_id)
+                            total_detections += 1
+                            # Track presence window for each object
+                            if track_id not in object_presence:
+                                object_presence[track_id] = {
+                                    "object_type": obj_type,
+                                    "start_time": o_start,
+                                    "end_time": o_end
+                                }
+            unique_count_by_type = {k: len(v) for k, v in unique_track_ids_by_type.items()}
+            total_unique_objects = sum(unique_count_by_type.values())
+            time_query_result = {
+                "window_start": window_start,
+                "window_end": window_end,
+                "unique_track_ids_by_type": {k: list(v) for k, v in unique_track_ids_by_type.items()},
+                "unique_count_by_type": unique_count_by_type,
+                "total_unique_objects": total_unique_objects,
+                "object_presence": object_presence,
+                "total_detections": total_detections
+            }
+            result["objects_in_time_window"] = time_query_result
 
         # === 4. Track ID - Frame range ===
         if get_track_frame_range and track_id:
