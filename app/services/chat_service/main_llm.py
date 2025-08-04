@@ -17,6 +17,7 @@ from langchain.schema import AIMessage, HumanMessage
 
 from app.services.chat_service.video_tool_discription import video_tool_description
 from app.services.chat_service.video_tool_service import VideoToolService
+from app.services.chat_service.chathistory import ChatMemoryForLLMService, generate_chat_id
 
 load_dotenv()
 
@@ -61,6 +62,7 @@ class ChatService:
             session_id=session_id,
             llm=self.client_wrapper()
         )
+        self.chatMemoryForLLMService = ChatMemoryForLLMService()
 
     def client_wrapper(self):
         """
@@ -77,25 +79,39 @@ class ChatService:
         Handles tool calls if present in the response.
         """
         try:
+            chat_id=generate_chat_id(
+                user_id="sachin",
+                chatTab_id="tb",
+                chat_box_id="gen_chat",
+                entity_id="eid",
+                entity_type="etype",
+            )
             # Add user message to memory
-            self.memory.chat_memory.add_user_message(query)
+            # self.memory.chat_memory.add_user_message(query)
+            chathistory=(self.chatMemoryForLLMService.get_chat_history_in_LLM_feedable_form(chat_id))
 
             # Build full message history from memory with correct roles
-            chat_history = self.memory.chat_memory.messages
-            memory_messages = [
-                {"role": "system", "content": main_prompt}
-            ] + [
-                {
-                    "role": "user" if isinstance(msg, HumanMessage) else "assistant",
-                    "content": msg.content
-                }
-                for msg in chat_history
-            ]
+            # chat_history = self.memory.chat_memory.messages
+            # memory_messages = [
+            #     {"role": "system", "content": main_prompt}
+            # ] + [
+            #     {
+            #         "role": "user" if isinstance(msg, HumanMessage) else "assistant",
+            #         "content": msg.content
+            #     }
+            #     for msg in chat_history
+            # ]
 
             # Send request to Groq
+            messages = [
+            {"role": "system", "content": main_prompt}
+            ]
+            messages.append({"role": "user", "content": query})
+            if chathistory:
+                messages=chathistory+messages
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=memory_messages,
+                messages=messages,
                 tools=video_tool_description
             )
 
@@ -103,17 +119,22 @@ class ChatService:
             print("DEBUG LLM MESSAGE:", message)  # Debug: Print full LLM message
 
             # Add assistant message to memory (handle None content for tool calls)
-            if message.content:
-                self.memory.chat_memory.add_ai_message(message.content)
-            else:
-                # For tool calls, add a placeholder message
-                self.memory.chat_memory.add_ai_message("Tool call executed")
+            # if message.content:
+            #     self.memory.chat_memory.add_ai_message(message.content)
+            # else:
+            #     # For tool calls, add a placeholder message
+            #     self.memory.chat_memory.add_ai_message("Tool call executed")
+
+            
 
             # Handle tools
             if hasattr(message, "tool_calls") and message.tool_calls:
                 print("DEBUG TOOL CALLS:", message.tool_calls)  # Debug: Print tool call details
-                return await self.handle_tool_call(message, query)
+                result= await self.handle_tool_call(message, query)
+                self.chatMemoryForLLMService.add_message(chat_id,query,result)
+                return result
 
+            self.chatMemoryForLLMService.add_message(chat_id,query,message.content)
             return message.content or "No answer generated."
         except Exception as e:
             print("DEBUG EXCEPTION:", e)

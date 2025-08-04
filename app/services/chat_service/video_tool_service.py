@@ -44,6 +44,7 @@ class VideoToolService:
         get_confidences = args.get("get_confidences", False)
         get_object_types = args.get("get_object_types", False)
         get_frame_object_count = args.get("get_frame_object_count", False)
+        get_position_by_frame_and_track = args.get("get_position_by_frame_and_track", False)
         get_frame_track_ids = args.get("get_frame_track_ids", False)  # ✅ NEW FLAG
         frame_number = args.get("frame_number")
         track_id = args.get("track_id")
@@ -89,7 +90,8 @@ class VideoToolService:
                     seen[tid] = {
                         "object_type": obj.get("object_type"),
                         "track_id": tid,
-                        "confidence": obj.get("confidence")
+                        "confidence": obj.get("confidence"),
+                        "frame_number": obj.get("frame_number")
                     }
             results["unique_objects"] = list(seen.values())
 
@@ -115,25 +117,103 @@ class VideoToolService:
             results["frame_number"] = frame_number
             results["object_count"] = len(unique_ids)
 
+        if get_position_by_frame_and_track and track_id is not None and frame_number is not None:       
+            matching_objects = [
+                obj for obj in all_objects
+                if str(obj.get("track_id")) == str(track_id) and int(obj.get("frame_number")) == int(frame_number)
+            ]
+
+            positions = []
+            for obj in matching_objects:
+                pos_info = {
+                    "frame_number": obj.get("frame_number"),
+                    "track_id": obj.get("track_id"),
+                }
+                if "position" in obj:
+                    pos_info["position"] = obj["position"]
+                if "bbox" in obj:
+                    pos_info["bbox"] = obj["bbox"]
+                if "start_position" in obj:
+                    pos_info["start_position"] = obj["start_position"]
+                if "end_position" in obj:
+                    pos_info["end_position"] = obj["end_position"]
+                positions.append(pos_info)
+
+            results["positions"] = positions
+
         # ✅ Object types
         if get_object_types:
-            if track_id is not None:
-                objects = [obj for obj in all_objects if obj.get("track_id") == track_id]
+            if track_id is not None and frame_number is not None:
+                # Both track_id and frame_number provided: filter by both
+                objects = [
+                    obj for obj in all_objects
+                    if str(obj.get("track_id")) == str(track_id) and int(obj.get("frame_number")) == int(frame_number)
+                ]
+                types = list({obj.get("object_type") for obj in objects if "object_type" in obj})
+                results["track_id"] = track_id
+                results["frame_number"] = frame_number
+                results["object_type"] = types
+            elif track_id is not None:
+                # Only track_id provided
+                objects = [obj for obj in all_objects if str(obj.get("track_id")) == str(track_id)]
                 types = list({obj.get("object_type") for obj in objects if "object_type" in obj})
                 results["track_id"] = track_id
                 results["object_type"] = types
+            elif frame_number is not None:
+                # Only frame_number provided
+                objects = [obj for obj in all_objects if int(obj.get("frame_number")) == int(frame_number)]
+                types = list({obj.get("object_type") for obj in objects if "object_type" in obj})
+                results["frame_number"] = frame_number
+                results["object_types"] = types
             else:
+                # Neither provided: all unique types in the video
                 types = list({obj.get("object_type") for obj in all_objects if "object_type" in obj})
                 results["object_types"] = types
 
         # ✅ Default fallback if no flags
-        if not any([get_count, get_unique, get_confidences, get_object_types, get_frame_object_count, get_frame_track_ids]):
-            results["result"] = filter_objects(
+        if not any([get_count, get_unique, get_confidences, get_object_types, get_frame_object_count, get_frame_track_ids, get_position_by_frame_and_track]):
+            results["result"] = self.filter_objects(
                 all_objects, fields=["object_type", "track_id", "confidence"]
             )
 
         print('results', results)
         return results
+
+#helper fallback function
+    def filter_objects(self, objects, fields=None, query=None):
+        """
+        Filters a list of object dicts to only include specified fields or answers user query.
+        Args:
+            objects (list): List of dicts representing objects.
+            fields (list, optional): List of fields to retain in each dict.
+            query (str, optional): User query to interpret for a relevant answer.
+        Returns:
+            list or dict: Filtered list of dicts or relevant answer.
+        """
+        if fields is not None:
+            return [{k: obj[k] for k in fields if k in obj} for obj in objects]
+
+        # If a query is provided, try to answer it
+        if query:
+            q = query.lower()
+            if "color" in q:
+                colors = list({obj.get("color") for obj in objects if "color" in obj})
+                return {"colors": colors}
+            if "count" in q or "how many" in q:
+                return {"count": len(objects)}
+            if "type" in q or "object" in q:
+                types = list({obj.get("object_type") for obj in objects if "object_type" in obj})
+                return {"object_types": types}
+            if "confidence" in q:
+                confidences = [obj.get("confidence") for obj in objects if "confidence" in obj]
+                return {"confidences": confidences}
+            if "position" in q or "location" in q:
+                positions = [obj.get("position") for obj in objects if "position" in obj]
+                return {"positions": positions}
+            # Add more patterns as needed
+
+        # Default: return all objects
+        return objects
 
 
     ###########segmentation tools###########    
@@ -165,6 +245,7 @@ class VideoToolService:
         get_track_frame_range = to_bool(args.get("get_track_frame_range", False))
         get_track_time_range = to_bool(args.get("get_track_time_range", False))
         get_track_position_range = to_bool(args.get("get_track_position_range", False))
+       
         count_within_seconds = float(args.get("count_within_seconds", 0))
         track_id = args.get("track_id")
 
@@ -215,26 +296,30 @@ class VideoToolService:
 
         # === 3. Count objects within N seconds ===
         if count_within_seconds > 0:
-            track_ids = set()
-            total_count = 0
-            object_type_counts = {}
+            unique_track_ids_by_type = {}
+            total_detections = 0
             for segment in segments:
                 start_time = segment.get("summary", {}).get("start_time", 0)
-                end_time = segment.get("summary", {}).get("end_time", 0)
                 if start_time < count_within_seconds:
                     objects = segment.get("summary", {}).get("objects", [])
                     for obj in objects:
                         if isinstance(obj, dict) and "track_id" in obj:
-                            track_ids.add(obj["track_id"])
                             obj_type = obj.get("object_type", "unknown")
-                            object_type_counts[obj_type] = object_type_counts.get(obj_type, 0) + 1
-                            total_count += 1
+                            track_id = obj["track_id"]
+                            if obj_type not in unique_track_ids_by_type:
+                                unique_track_ids_by_type[obj_type] = set()
+                            unique_track_ids_by_type[obj_type].add(track_id)
+                            total_detections += 1
+
+            unique_count_by_type = {k: len(v) for k, v in unique_track_ids_by_type.items()}
+            total_unique_objects = sum(unique_count_by_type.values())
+
             result["objects_in_first_n_seconds"] = {
                 "within_seconds": count_within_seconds,
-                "unique_track_ids": list(track_ids),
-                "unique_count": len(track_ids),
-                "total_detections": total_count,
-                "by_type": object_type_counts
+                "unique_track_ids_by_type": {k: list(v) for k, v in unique_track_ids_by_type.items()},
+                "unique_count_by_type": unique_count_by_type,
+                "total_unique_objects": total_unique_objects,
+                "total_detections": total_detections
             }
 
         # === 4. Track ID - Frame range ===
@@ -273,7 +358,7 @@ class VideoToolService:
                     "end_time": max_time
                 }
             else:
-                result["track_id_time_range"] = {"error": "Track ID not found", "track_id": track_id}
+                result["track_id_time_range"] = {"error": "Track ID not found", "track_id": track_id}      
 
         # === 6. Track ID - Position range ===
         if get_track_position_range and track_id:
@@ -298,7 +383,7 @@ class VideoToolService:
         if not result:
             result["message"] = (
                 "No valid flags provided. Use flags like "
-                "`get_segment_object_counts`, `get_total_object_count`, `count_within_seconds`, or track-level flags."
+                "`get_segment_object_counts`, `get_total_object_count`, `count_within_seconds`, or track-level flags, "
             )
 
         return result

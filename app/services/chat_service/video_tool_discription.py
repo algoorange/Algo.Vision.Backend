@@ -7,59 +7,64 @@
 
 video_tool_description = [
     {
-        "type": "function",
-        "function": {
-            "name": "get_all_object_details",
-            "description": "Returns specific analytics about detected and tracked objects in a video, based on structured flags. This tool can return the total object count, unique objects by track ID, confidence values, and object types either globally or for a specific track ID. It is used to answer detailed questions about object tracking in a video without relying on natural language interpretation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "video_id": {
-                        "type": "string",
-                        "description": "The unique ID of the video from which object data should be retrieved. Required for all queries."
-                    },
-                    "get_count": {
-                        "type": "boolean",
-                        "description": "Set to true to return the count of unique tracked objects (based on distinct track IDs)."
-                    },
-                    "get_unique_objects": {
-                        "type": "boolean",
-                        "description": "Set to true to return a list of unique tracked objects with their track_id, object_type, and confidence."
-                    },
-                    "get_frame_track_ids": {
-                        "type": "boolean",
-                        "description": "Set to true to return a list of track IDs for a specific frame."
-                    },
-                    "get_confidences": {
-                        "type": "boolean",
-                        "description": "Set to true to return the confidence score(s) for detected objects. If 'track_id' is provided, returns confidence for that specific object only."
-                    },
-                    "get_object_types": {
-                        "type": "boolean",
-                        "description": "Set to true to return object type(s). If 'track_id' is provided, returns the object type for that specific track only."
-                    },
-                    "get_frame_object_count": {
-                        "type": "boolean",
-                        "description": "Set to true to get count of objects in a specific frame."
-                    },
-                    "frame_number": {
-                        "type": "integer",
-                        "description": "Frame number to query for object count. Required if get_frame_object_count is true."
-                    },
-                    "track_id": {
-                        "type": "integer",
-                        "description": "Optional. Use to get object type or confidence specific to this tracked object."
-                    }
-                },
-                "required": ["video_id"]
-            }
+  "type": "function",
+  "function": {
+    "name": "get_all_object_details",
+    "description": "Returns structured analytics from object detection and tracking in a video. This tool allows querying total object counts, unique objects, frame-wise analytics, confidence scores, object types, and filtered details by track ID or frame number. It is designed for precise, structured data access, not general natural language understanding. Use this tool to answer questions such as:\n\n• 'How many objects were detected in the video?'\n• 'What object types appeared in the video?'\n• 'Show me the confidence level of track ID 23.'\n• 'What is the object type of track ID 12?'\n• 'How many objects were detected in frame 45?'\n• 'Which track IDs are present in frame 10?'\n• 'What is the confidence and object type of track ID 5 in frame 15?'\n\nThis tool supports frame-specific queries and track ID-specific lookups. All queries require a valid video_id.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "video_id": {
+          "type": "string",
+          "description": "The unique ID of the video from which object data should be retrieved. Required for all queries."
+        },
+        "get_count": {
+          "type": "boolean",
+          "description": "Set to true to return the total count of unique objects detected in the video (based on distinct track IDs)."
+        },
+        "get_unique_objects": {
+          "type": "boolean",
+          "description": "Set to true to return details of all unique tracked objects, including their track_id, object_type, and confidence score."
+        },
+        "get_frame_track_ids": {
+          "type": "boolean",
+          "description": "Set to true to retrieve a list of track IDs present in a specific frame. Requires 'frame_number'."
+        },
+        "get_confidences": {
+          "type": "boolean",
+          "description": "Set to true to retrieve confidence scores. If 'track_id' is provided, it returns confidence for that specific tracked object."
+        },
+        "get_object_types": {
+          "type": "boolean",
+          "description": "Set to true to retrieve object types. If 'track_id' is provided, it returns the object type for that specific tracked object."
+        },
+        "get_frame_object_count": {
+          "type": "boolean",
+          "description": "Set to true to return the count of all objects present in a specific frame. Requires 'frame_number'."
+        },
+        "get_position_by_frame_and_track": {
+          "type": "boolean",
+          "description": "Set to true to retrieve the position of a specific tracked object in a specific frame. Requires 'frame_number' and 'track_id'."
+        },
+        "frame_number": {
+          "type": "integer",
+          "description": "The frame number to query. Required for frame-specific queries like object count or track ID lookup."
+        },
+        "track_id": {
+          "type": "integer",
+          "description": "The ID of the tracked object. Optional, used to filter confidence or object type results to a specific object."
         }
-    },
+      },
+      "required": ["video_id"]
+    }
+  }
+},
+
 {
   "type": "function",
   "function": {
     "name": "get_video_segment_details",
-    "description": "Used to answer questions about specific time-based segments of a video. Supports queries like 'how many objects were present in the first 5 seconds', 'what object types appeared between 0 and 10 seconds', 'give me the frame range of object 23', and 'what was the position of a car at the start and end of the video'. This tool analyzes fixed-duration segments of the video (e.g., 5s, 10s, 30s) and returns detailed insights about tracked objects.",
+    "description": "Used to answer questions about specific time-based segments of a video. Supports queries like 'how many objects were present in the first 5 seconds', 'what object types appeared between 0 and 10 seconds', 'give me the frame range of object 23','in which frame to which frame object 23 was present or detected',' in which time to which time did the object 23 was present or detected', and 'what was the position of a car at the start and end of the video'. This tool analyzes fixed-duration segments of the video (e.g., 5s, 10s, 30s) and returns detailed insights about tracked objects.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -77,30 +82,30 @@ video_tool_description = [
         },
         "get_segment_object_counts": {
           "type": "boolean",
-          "description": "Set to true to return the number of unique objects (by track ID) present in each segment. Useful for counting how many objects were seen in a time range like 'first 5 seconds'."
+          "description": "set true to get the number of unique objects (by track ID) present in each segment. Useful for counting how many objects were seen in a time range like 'first 5 seconds'."
         },
         "get_segment_object_types": {
           "type": "boolean",
-          "description": "Set to true to get a list of object types (like car, person, truck, etc.) that appeared in each segment."
+          "description": "set true to get a list of object types (like car, person, truck, etc.) that appeared in each segment."
         },
         "get_track_frame_range": {
           "type": "boolean",
-          "description": "Returns the first and last frame number where the object with the specified track ID appears."
+          "description": "set true to get the first and last frame number where the object with the specified track ID appears."
         },
         "get_track_position_range": {
           "type": "boolean",
-          "description": "Returns the start and end position coordinates (x, y) of a specific tracked object by its track ID."
+          "description": "set true to get the start and end position coordinates (x, y) of a specific tracked object by its track ID."
         },
         "get_track_time_range": {
           "type": "boolean",
-          "description": "Returns the start and end time (in seconds) when a specific object appeared in the video."
+          "description": "set true to get the start and end time (in seconds) when a specific object appeared in the video."
         },
         "track_id": {
           "type": "string",
           "description": "The unique track ID of the object to retrieve details for (required for track-level queries such as time, frame, or position range)."
         }
       },
-      "required": ["video_id"]
+      "required": ["video_id", "track_id"]
     }
   }
 }
