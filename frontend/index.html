@@ -370,9 +370,28 @@ console.log("SESSION ID:", sessionId);
     }
 
     if (result && result.answer) {
-      // Render Markdown to HTML
-      const html = marked.parse(result.answer);
-      chatMessages.innerHTML += `<div class="message bot">${html}</div>`;
+      if (typeof result.answer === 'object' && result.answer.type === 'evidence') {
+        let html = `<div class="evidence-bot-message">`;
+        if(result.answer.text){
+          html += `<div class="evidence-title">${result.answer.text}</div>`;
+        }
+        html += `<div class="chat-evidence-images">`;
+        result.answer.images.forEach(img => {
+          if (img.image_data) {
+            html += `<div class="evidence-frame">
+              <img class="evidence-image" src="data:image/jpeg;base64,${img.image_data}" alt="${img.caption || 'Evidence frame'}">
+              <div class="caption">${img.caption || ''}</div>
+            </div>`;
+          } else {
+            html += `<div class="evidence-frame"><div class="caption">Image not available</div></div>`;
+          }
+        });
+        html += '</div></div>';
+        chatMessages.innerHTML += `<div class="message bot">${html}</div>`;
+      } else {
+        const html = marked.parse(result.answer);
+        chatMessages.innerHTML += `<div class="message bot">${html}</div>`;
+      }
       // Highlight code blocks
       chatMessages.querySelectorAll('pre code').forEach((block) => {
         hljs.highlightElement(block);

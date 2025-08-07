@@ -130,9 +130,15 @@ class ChatService:
             # Handle tools
             if hasattr(message, "tool_calls") and message.tool_calls:
                 print("DEBUG TOOL CALLS:", message.tool_calls)  # Debug: Print tool call details
-                result= await self.handle_tool_call(message, query)
-                self.chatMemoryForLLMService.add_message(chat_id,query,result)
-                return result
+                result = await self.handle_tool_call(message, query)
+                # Only add string/markdown to chat memory
+                if isinstance(result, dict) and result.get("type") == "evidence":
+                    # Optionally, add a summary string to chat history
+                    self.chatMemoryForLLMService.add_message(chat_id, query, "Displayed evidence frames.")
+                    return result
+                else:
+                    self.chatMemoryForLLMService.add_message(chat_id, query, result)
+                    return result
 
             self.chatMemoryForLLMService.add_message(chat_id,query,message.content)
             return message.content or "No answer generated."
@@ -152,14 +158,10 @@ class ChatService:
             video_tool_service = VideoToolService(request=None)
             if agent_name == "get_all_object_details":
                 tool_result = await video_tool_service.get_all_object_details(args)
-            elif agent_name == "get_specific_object_type":
-                tool_result = await video_tool_service.get_specific_object_type(args)
-            elif agent_name == "get_traffic_congestion_details":
-                tool_result = await video_tool_service.get_traffic_congestion_details(args)
-            elif agent_name == "object_position_confidence":
-                tool_result = await video_tool_service.object_position_confidence(args)
-            elif agent_name == "get_all_object_direction":
-                tool_result = await video_tool_service.get_all_object_direction(args)
+            elif agent_name == "show_evidence":
+                tool_result = await video_tool_service.show_evidence(args)
+                # If evidence tool, return directly without LLM reformatting
+                return tool_result
             elif agent_name == "get_video_segment_details":
                 tool_result = await video_tool_service.get_video_segment_details(args)
             elif agent_name == "object_position_confidence_using_track_id":
@@ -171,50 +173,51 @@ class ChatService:
                 tool_result = await video_tool_service.object_position_confidence_using_track_id(args)
             else:
                 return {"error": f"Unknown agent name: {agent_name}"}
+            if self.reformat_prompt:
+                reformat_prompt = (
+                    self.reformat_prompt or
+                    "Please reformat the tool result for the user."
+                )
+                reformat_prompt += (
+                    "\nYour job is to present the tool result in a clear, concise, and user-friendly way. "
+                    "Do not include raw JSON or technical fields. Use natural language and summarize the most important information for the user. "
+                    "Format your answer using advanced Markdown for clarity and beauty: use bullet points, numbered lists, tables, headings, bold, italics where appropriate. ignore the code blocks, and LaTeX math blocks."
+                    "Make the output visually appealing and easy to read."
+                    "show only the final answer, do not show the technical fields and technical results."
+                )
 
-            # Always reformat using LLM for user-friendly output
-            reformat_prompt = (
-                self.reformat_prompt or
-                "Please reformat the tool result for the user."
-            )
-            reformat_prompt += (
-                "\nYour job is to present the tool result in a clear, concise, and user-friendly way. "
-                "Do not include raw JSON or technical fields. Use natural language and summarize the most important information for the user. "
-                "Format your answer using advanced Markdown for clarity and beauty: use bullet points, numbered lists, tables, headings, bold, italics where appropriate. ignore the code blocks, and LaTeX math blocks."
-                "Make the output visually appealing and easy to read."
-                "show only the final answer, do not show the technical fields and technical results."
-            )
-
-            retries = 3
-            for attempt in range(retries):
-                try:
-                    follow_up = self.llm_client.chat.completions.create(
-                        model=self.model_name,
-                        messages=[
-                            ChatCompletionSystemMessageParam(
-                                role="system",
-                                content=reformat_prompt
-                            ),
-                            ChatCompletionUserMessageParam(
-                                role="user",
-                                content=f"User Question: {user_query}\nRaw Tool Result: {tool_result}"
-                            )
-                        ],
-                        max_tokens=1000,
-                        timeout=60
-                    )
-                    result = follow_up.choices[0].message
-                    # Store reformatted assistant message in memory
-                    if result.content:
-                        self.memory.chat_memory.add_ai_message(result.content)
-                        return result.content
-                    else:
-                        self.memory.chat_memory.add_ai_message("Tool result processed")
-                        return "Tool result processed"
-                except Exception as e:
-                    if 'timed out' in str(e).lower() and attempt < retries - 1:
-                        time.sleep(2)
-                        continue
-                    return str(e)
+                retries = 3
+                for attempt in range(retries):
+                    try:
+                        follow_up = self.llm_client.chat.completions.create(
+                            model=self.model_name,
+                            messages=[
+                                ChatCompletionSystemMessageParam(
+                                    role="system",
+                                    content=reformat_prompt
+                                ),
+                                ChatCompletionUserMessageParam(
+                                    role="user",
+                                    content=f"User Question: {user_query}\nRaw Tool Result: {tool_result}"
+                                )
+                            ],
+                            max_tokens=1000,
+                            timeout=60
+                        )
+                        result = follow_up.choices[0].message
+                        # Store reformatted assistant message in memory
+                        if result.content:
+                            self.memory.chat_memory.add_ai_message(result.content)
+                            return result.content
+                        else:
+                            self.memory.chat_memory.add_ai_message("Tool result processed")
+                            return "Tool result processed"
+                    except Exception as e:
+                        if 'timed out' in str(e).lower() and attempt < retries - 1:
+                            time.sleep(2)
+                            continue
+                        return str(e)
+            else:
+                return tool_result
         except Exception as e:
-            return str(e)
+            return str(e)        

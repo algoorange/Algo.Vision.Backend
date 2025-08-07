@@ -124,6 +124,43 @@ video_tool_description = [
       "required": ["video_id"]
     }
   }
+},
+{
+  "type": "function",
+  "function": {
+    "name": "show_evidence",
+    "description": "Returns visual evidence (frames and captions) for specific detected objects in a video. Supports filtering by object type, track ID, frame number, or question-based prompts. Useful for answering questions like 'Show me frames where red cars were detected', 'Where is object 23?', or 'Was there a person near the entrance?'",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "video_id": {
+          "type": "string",
+          "description": "The unique ID of the video to query."
+        },
+        "get_evidence": {
+          "type": "boolean",
+          "description": "Set to true to retrieve evidence frames (images + captions) of objects detected in the video."
+        },
+        "object_type": {
+          "type": "string",
+          "description": "The type of object to search for (e.g., car, person, truck). Optional."
+        },
+        "track_id": {
+          "type": "string",
+          "description": "The track ID of the object to find evidence for. Optional."
+        },
+        "frame_number": {
+          "type": ["integer", "string"],
+          "description": "Frame number to specifically look in. Optional. If not provided, all frames will be searched."
+        },
+        "question": {
+          "type": "string",
+          "description": "Natural language query for evidence, like 'show red car' or 'person near entrance'. Used for context but not parsed directly unless integrated with NLP. Optional."
+        }
+      },
+      "required": ["video_id", "get_evidence"]
+    }
+  }
 }
  
     ]
