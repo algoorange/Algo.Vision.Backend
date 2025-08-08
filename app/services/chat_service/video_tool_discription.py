@@ -36,11 +36,11 @@ video_tool_description = [
         },
         "get_object_color": {
           "type": "boolean",
-          "description": "Set to true to retrieve object color. If 'track_id' is provided, it returns the color for that specific tracked object. if the track id and frame number is provided, it returns the color for that specific tracked object in that specific frame."
+          "description": "Set to true to retrieve object color. If 'track_id' is provided, it returns the color for that specific tracked object. if the track id and frame number is provided, it returns the color for that specific tracked object in that specific frame eg: how many red cars passed and give me the count."
         },
         "get_object_types": {
           "type": "boolean",
-          "description": "Set to true to retrieve object types. If 'track_id' is provided, it returns the object type for that specific tracked object. if the track id and frame number is provided, it returns the object type for that specific tracked object in that specific frame."
+          "description": "Set to true to retrieve object types. If 'track_id' is provided, it returns the object type for that specific tracked object. if the track id and frame number is provided, it returns the object type for that specific tracked object in that specific frame"
         },
         "get_frame_object_count": {
           "type": "boolean",
@@ -129,38 +129,37 @@ video_tool_description = [
   "type": "function",
   "function": {
     "name": "show_evidence",
-    "description": "Returns visual evidence (frames and captions) for specific detected objects in a video. Supports filtering by object type, track ID, frame number, or question-based prompts. Useful for answering questions like 'Show me frames where red cars were detected', 'Where is object 23?', or 'Was there a person near the entrance?'",
+    "description": "Retrieves visual evidence (e.g., video frames and captions) related to detected and tracked objects in a video. This tool intelligently handles a wide range of natural language queries to provide visual proof based on object type, color, location, movement, frame number, detection confidence, or track ID. It supports both direct filtering and contextual question-based prompts to return accurate evidence images.",
     "parameters": {
       "type": "object",
       "properties": {
         "video_id": {
           "type": "string",
-          "description": "The unique ID of the video to query."
+          "description": "The unique identifier of the video from which to retrieve visual evidence."
         },
         "get_evidence": {
           "type": "boolean",
-          "description": "Set to true to retrieve evidence frames (images + captions) of objects detected in the video."
+          "description": "Set this to true to retrieve and return evidence frames (images + relevant metadata) from the video."
         },
         "object_type": {
           "type": "string",
-          "description": "The type of object to search for (e.g., car, person, truck). Optional."
+          "description": "The type of object to search for (e.g., car, truck, person, bus, bike). Optional. If not provided, all types are considered."
         },
         "track_id": {
           "type": "string",
-          "description": "The track ID of the object to find evidence for. Optional."
+          "description": "The specific track ID of the object for which evidence should be retrieved. Optional."
         },
         "frame_number": {
           "type": ["integer", "string"],
-          "description": "Frame number to specifically look in. Optional. If not provided, all frames will be searched."
+          "description": "The specific frame number to analyze. Optional. If omitted, all frames will be searched."
         },
         "question": {
           "type": "string",
-          "description": "Natural language query for evidence, like 'show red car' or 'person near entrance'. Used for context but not parsed directly unless integrated with NLP. Optional."
+          "description": "A natural language question from the user, such as 'Show the red car near the entrance' or 'Was a white truck detected?'. This field provides context to help extract the correct filters (color, object type, etc.) and return relevant visual evidence. Optional but useful when filters are not explicitly provided."
         }
       },
       "required": ["video_id", "get_evidence"]
     }
   }
 }
- 
     ]

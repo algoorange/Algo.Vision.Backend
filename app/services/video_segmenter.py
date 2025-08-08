@@ -23,15 +23,16 @@ def segment_tracking_data(tracking_data: List[Dict[str, Any]], segment_duration:
         segments.append(current_segment)
     return segments
 
-def summarize_segment(segment: List[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize_segment(segment: List[Dict[str, Any]], video_id: str) -> Dict[str, Any]:
     """
     Summarizes a segment of tracking data (frames_data style).
-    Returns a dict summary including all object details.
-    Includes both total detection counts and unique object counts by track_id for each object type.
+    Returns a dict summary restricted to required fields only.
+    Includes unique object counts by track_id for each object type and a filtered list of objects.
     """
-    objects = []
-    unique_objects_by_type = {}  # unique track_id per type
-    detection_counts = {}  # total detections per type
+    # Aggregate per unique track_id within the segment
+    # We will assign a single dominant (majority) object_type per track_id to ensure
+    # that the sum(object_counts.values()) == len(objects)
+    track_agg: Dict[str, Dict[str, Any]] = {}
 
 #calculation of unique objects by track_id
 
@@ -49,29 +50,61 @@ def summarize_segment(segment: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 
+    # Only keep these fields for each object in the segment
+    allowed_object_keys = {
+        "track_id",
+        "object_type",
+        "confidence",
+        "frame_time",
+        "color",
+        "start_time",
+        "end_time",
+        "start_frame",
+        "end_frame",
+        "start_position",
+        "end_position",
+    }
+
     for frame in segment:
-        frame_time = frame.get("frame_time")
         for obj in frame.get('objects', []):
             obj_type = obj.get('object_type', 'unknown')
-            track_id = obj.get('track_id')
-            # Count total detections
-            detection_counts[obj_type] = detection_counts.get(obj_type, 0) + 1
-            # Count unique objects by track_id
-            if obj_type not in unique_objects_by_type:
-                unique_objects_by_type[obj_type] = set()
-            if track_id is not None:
-                unique_objects_by_type[obj_type].add(track_id)
-            # Collect object details if needed
-            objects.append(obj)
+            raw_tid = obj.get('track_id')
+            if raw_tid is None:
+                # Skip untracked objects to avoid inflating counts
+                continue
+            track_id = str(raw_tid)  # normalize type to string for stable keys
 
-    object_counts = {k: len(v) for k, v in unique_objects_by_type.items()}
+            # Initialize aggregation entry
+            if track_id not in track_agg:
+                filtered_obj = {k: obj[k] for k in allowed_object_keys if k in obj}
+                track_agg[track_id] = {
+                    "first_obj": filtered_obj,
+                    "type_counts": {},  # object_type -> count within this segment
+                }
+            # Increment type count for this track within the segment
+            tc = track_agg[track_id]["type_counts"]
+            tc[obj_type] = tc.get(obj_type, 0) + 1
+
+    # Decide dominant type per track and build final counts and objects
+    object_counts: Dict[str, int] = {}
+    objects: List[Dict[str, Any]] = []
+    for tid, data in track_agg.items():
+        type_counts = data["type_counts"]
+        if not type_counts:
+            # Should not happen, but guard anyway
+            continue
+        # Pick majority class; tie-breaker: lexical order to keep deterministic
+        dominant_type = sorted(type_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        object_counts[dominant_type] = object_counts.get(dominant_type, 0) + 1
+        obj = dict(data["first_obj"])  # copy
+        obj["object_type"] = dominant_type
+        objects.append(obj)
 
     summary = {
         "start_time": segment[0]["frame_time"],
         "end_time": segment[-1]["frame_time"],
         "object_counts": object_counts,        # unique objects by track_id
-        "detection_counts": detection_counts,  # total detections per type
         "frame_count": len(segment),
-        "objects": objects,  # List of all detected objects with details
+        "objects": objects,  # Filtered list of detected objects with required details only
     }
     return summary

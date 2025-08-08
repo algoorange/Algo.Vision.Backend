@@ -4,7 +4,7 @@ import numpy as np
 from app.services import object_detector, object_tracker
 from app.utils.helpers import format_result, build_summary_prompt, scale_coordinates, is_bbox_in_polygon
 from app.utils.embeddings import embedder, embedding_index, embedding_metadata
-from app.services.summary_generate_by_llm import generate_summary
+from app.services.summary_generate_by_llm import generate_summary, generate_segment_description
 from app.services.llava_groq_service import analyze_video_frames_with_llava, generate_video_summary_with_llava
 from fastapi import UploadFile
 import uuid
@@ -263,16 +263,33 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
     
     for duration in valid_durations:
         segments = segment_tracking_data(frames_data, duration)
-        duration_summaries = [summarize_segment(segment) for segment in segments]
+        duration_summaries = [summarize_segment(segment, video_id) for segment in segments]
         segment_summaries.extend(duration_summaries)  # Collect all summaries
         
         for idx, summary in enumerate(duration_summaries):
+            # Store only the required fields in the segment DB
             segment_doc = {
                 "video_id": video_id,
                 "segment_index": idx,
                 "segment_duration": duration,  # Store the duration for filtering
-                "summary": summary
+                # keep only start/end times inside summary
+                "summary": {
+                    "start_time": summary.get("start_time"),
+                    "end_time": summary.get("end_time"),
+                },
+                # elevate these fields to top-level per requirement
+                "object_counts": summary.get("object_counts", {}),
+                "frame_count": summary.get("frame_count", 0),
+                "objects": summary.get("objects", []),
             }
+            # Generate LLM description for this segment and attach it
+            try:
+                description = await generate_segment_description(segment_doc)
+                if description and not description.startswith("Error:"):
+                    segment_doc["summary"]["description"] = description
+            except Exception as _e:
+                # Non-fatal: continue without description
+                pass
             all_segment_docs.append(segment_doc)
     
     if all_segment_docs:

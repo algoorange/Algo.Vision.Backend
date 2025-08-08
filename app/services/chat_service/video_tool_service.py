@@ -244,7 +244,10 @@ class VideoToolService:
         return {"result": results, "reformat": True}
 
 
-#helper fallback function
+
+    
+    
+    
     def filter_objects(self, objects, fields=None, query=None):
         """
         Filters a list of object dicts to only include specified fields or answers user query.
@@ -549,6 +552,9 @@ class VideoToolService:
         object_type = args.get("object_type")
         track_id = args.get("track_id")
         frame_number = args.get("frame_number")
+        color_query = args.get("color", "")
+        start_time = args.get("start_time")
+        end_time = args.get("end_time")
         get_evidence = args.get("get_evidence", True)
         question = args.get("question", "")
 
@@ -566,7 +572,12 @@ class VideoToolService:
         for frame in video_doc.get("frames", []):
             if frame_number is not None and int(frame["frame_number"]) != int(frame_number):
                 continue
-
+            if color_query and frame.get("color", "").lower() != color_query.lower():
+                continue
+            if start_time is not None and end_time is not None:
+                frame_time = float(frame.get("frame_time", 0))
+                if not (start_time <= frame_time <= end_time):
+                    continue
             for obj in frame.get("objects", []):
                 if object_type and obj.get("object_type") != object_type:
                     continue
