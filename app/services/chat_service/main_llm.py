@@ -16,7 +16,9 @@ from langchain_groq import ChatGroq
 from langchain.schema import AIMessage, HumanMessage
 
 from app.services.chat_service.video_tool_discription import video_tool_description
-from app.services.chat_service.video_tool_service import VideoToolService
+from app.services.chat_service.all_tools.all_object_tool import AllObjectToolService
+from app.services.chat_service.all_tools.video_segment_tool import VideoSegmentToolService
+from app.services.chat_service.all_tools.evidence_tool import EvidenceToolService
 from app.services.chat_service.chathistory import ChatMemoryForLLMService, generate_chat_id
 
 load_dotenv()
@@ -155,15 +157,16 @@ class ChatService:
         args = tool_call.function.arguments if hasattr(tool_call.function, "arguments") else {}
 
         try:
-            video_tool_service = VideoToolService(request=None)
+            video_tool_service = AllObjectToolService(request=None)
+            video_segment_tool_service = VideoSegmentToolService(request=None)
+            evidence_tool_service = EvidenceToolService(request=None)
             if agent_name == "get_all_object_details":
                 tool_result = await video_tool_service.get_all_object_details(args)
             elif agent_name == "show_evidence":
-                tool_result = await video_tool_service.show_evidence(args)
-                # If evidence tool, return directly without LLM reformatting
+                tool_result = await evidence_tool_service.show_evidence(args)
                 return tool_result
             elif agent_name == "get_video_segment_details":
-                tool_result = await video_tool_service.get_video_segment_details(args)
+                tool_result = await video_segment_tool_service.get_video_segment_details(args)
             elif agent_name == "object_position_confidence_using_track_id":
                 if "frame_number" in args and args["frame_number"] is not None:
                     try:

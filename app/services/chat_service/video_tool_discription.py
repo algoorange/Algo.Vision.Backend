@@ -36,7 +36,7 @@ video_tool_description = [
         },
         "get_object_color": {
           "type": "boolean",
-          "description": "Set to true to retrieve object color. If 'track_id' is provided, it returns the color for that specific tracked object. if the track id and frame number is provided, it returns the color for that specific tracked object in that specific frame eg: how many red cars passed and give me the count."
+          "description": "Set to true to retrieve object color details. For overall totals (no time window), combine with 'object_type' and 'color' to get unique counts by track_id. Example (overall): get_object_color=true, object_type='car', color='black' → answers 'how many black cars detected?'. If 'track_id' is provided, returns the color for that specific tracked object; if both 'track_id' and 'frame_number' are provided, returns the color for that object in that frame. Note: for time-window or segment-specific color counts, use get_video_segment_details instead."
         },
         "get_object_types": {
           "type": "boolean",
@@ -57,6 +57,14 @@ video_tool_description = [
         "track_id": {
           "type": "integer",
           "description": "The ID of the tracked object. Optional, used to filter confidence or object type results to a specific object."
+        },
+        "object_type": {
+          "type": "string",
+          "description": "Optional. Filter by object type when using get_object_color to compute overall color/type counts (e.g., object_type='car')."
+        },
+        "color": {
+          "type": "string",
+          "description": "Optional. Filter by color when using get_object_color to compute overall color/type counts (e.g., color='black')."
         }
       },
       "required": ["video_id"]
@@ -68,7 +76,7 @@ video_tool_description = [
   "type": "function",
   "function": {
     "name": "get_video_segment_details",
-    "description": "Used to answer questions about specific time-based segments of a video. Supports queries like 'how many objects were present in the first 5 seconds', 'what object types appeared between 0 and 10 seconds', 'give me the frame range of object 23','in which frame to which frame object 23 was present or detected',' in which time to which time did the object 23 was present or detected', and 'what was the position of a car at the start and end of the video'. This tool analyzes fixed-duration segments of the video (e.g., 5s, 10s, 30s) and returns detailed insights about tracked objects.",
+    "description": "Used to answer questions about specific time-based segments of a video. It supports generic queries (object type, color, time windows) and precise track-level lookups. Examples: 'how many blue cars passed in the first 5 seconds?', 'is any car visible between 7 and 10 seconds?', 'in the first 30 seconds, how many blue cars?', 'how many segments are in the video?', 'in which segment do cars appear the most?', 'give me the frame/time/position range of object 23'. It analyzes fixed-duration segments (e.g., 5s, 10s, 30s), uses per-segment object summaries, and can search segment descriptions by keywords.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -119,12 +127,57 @@ video_tool_description = [
         "track_id": {
           "type": "string",
           "description": "The unique track ID of the object to retrieve details for (required for track-level queries such as time, frame, or position range)."
+        },
+        "object_type": {
+          "type": ["string", "array"],
+          "description": "Filter by object type(s) such as car, truck, person. Accepts a string or list of strings."
+        },
+        "min_confidence": {
+          "type": ["number", "string"],
+          "description": "Minimum detection confidence to include an object (e.g., 0.8)."
+        },
+        "segment_index": {
+          "type": ["integer", "array"],
+          "description": "Filter to specific segment index/indices."
+        },
+        "exists_only": {
+          "type": "boolean",
+          "description": "If true, return a boolean flag indicating whether any object matches the filters within the time window. Useful for queries like 'Is any car visible between 7 and 10 seconds?'."
+        },
+        "get_number_of_segments": {
+          "type": "boolean",
+          "description": "If true, return the number of segments in the video for the given segment_duration. return how many segment in the video for the given segment_duration."
+        },
+        "get_busiest_segment": {
+          "type": "boolean",
+          "description": "If true, return the segment with the highest object count. Can be combined with object_type to get busiest segment for a specific type."
+        },
+        "get_count_by_type": {
+          "type": "boolean",
+          "description": "If true, return counts and unique track counts by object type within the (optional) time window and filters."
+        },
+        "get_segment_descriptions": {
+          "type": "boolean",
+          "description": "If true, return segment descriptions with start/end times."
+        },
+        "get_segments_overview": {
+          "type": "boolean",
+          "description": "If true, return per-segment object_counts and totals as an overview."
+        },
+        "get_count_by_color_in_segment": {
+          "type": "boolean",
+          "description": "Time-windowed or segment-scoped color counts (de-duplicated by track_id). Use this when the user specifies a time window or segment constraint. For overall totals without time constraints (e.g., 'how many black cars detected?'), prefer get_all_object_details.\n\nFilters: \n- color: string or array (e.g., 'red' or ['red','blue'])\n- object_type: string or array (e.g., 'car', 'person')\n- min_confidence: float (optional)\n- segment_index: int or array of ints (optional)\n\nTime windows (pick one):\n- count_within_seconds: first N seconds (e.g., 30)\n- time_range_start/time_range_end: explicit range in seconds (e.g., 10..25)\n- last_n_seconds: last N seconds from video end (e.g., 20)\n\nReturns: unique counts by color (de-duplicated by track_id), list of unique track_ids per color, total_unique_objects, and the resolved window.\n\nExamples:\n1) 'How many red cars in the first 30 seconds?': set get_count_by_color=true, color='red', object_type='car', count_within_seconds=30\n2) 'Count red and blue vehicles between 10 and 25 seconds': get_count_by_color=true, color=['red','blue'], time_range_start=10, time_range_end=25\n3) 'How many red cars in the last 20 seconds?': get_count_by_color=true, color='red', object_type='car', last_n_seconds=20"
+        },
+        "search_description_keywords": {
+          "type": ["string", "array"],
+          "description": "Keyword(s) to search within segment descriptions (e.g., 'accident', 'crowd', 'blue car')."
         }
       },
       "required": ["video_id"]
     }
   }
 },
+
 {
   "type": "function",
   "function": {
