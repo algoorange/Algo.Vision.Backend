@@ -60,8 +60,6 @@ class EvidenceToolService:
         for frame in video_doc.get("frames", []):
             if frame_number is not None and int(frame["frame_number"]) != int(frame_number):
                 continue
-            if color_query and frame.get("color", "").lower() != color_query.lower():
-                continue
             if start_time is not None and end_time is not None:
                 frame_time = float(frame.get("frame_time", 0))
                 if not (start_time <= frame_time <= end_time):
@@ -70,6 +68,10 @@ class EvidenceToolService:
                 if object_type and obj.get("object_type") != object_type:
                     continue
                 if track_id and str(obj.get("track_id")) != str(track_id):
+                    continue
+                # Apply color filter at the object level (not frame level)
+                obj_color = obj.get("properties", {}).get("color", obj.get("color", ""))
+                if color_query and str(obj_color).lower() != str(color_query).lower():
                     continue
                 frame_id = frame["frame_id"]
                 # Try to get image from MongoDB (BSON Binary)

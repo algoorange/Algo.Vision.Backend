@@ -75,7 +75,13 @@ class AllObjectToolService:
         def matches_filters(o):
             if filter_object_type and str(o.get("object_type", "")).strip().lower() != str(filter_object_type).strip().lower():
                 return False
-            if filter_color and str(o.get("color", "")).strip().lower() != str(filter_color).strip().lower():
+            # Prefer properties.color for filtering, fallback to legacy color
+            def _obj_color(val):
+                props = o.get("properties") or {}
+                if not isinstance(props, dict):
+                    props = {}
+                return str(props.get("color", o.get("color", ""))).strip().lower()
+            if filter_color and _obj_color(o) != str(filter_color).strip().lower():
                 return False
             # If frame_number provided, many queries naturally scope to that frame
             if frame_number is not None and int(o.get("frame_number", -1)) != int(frame_number):
@@ -161,20 +167,33 @@ class AllObjectToolService:
             results["positions"] = positions
 
         if get_object_color:
+            def _get_color_from_obj(obj: dict) -> str:
+                props = obj.get("properties") or {}
+                if not isinstance(props, dict):
+                    props = {}
+                return str(props.get("color", obj.get("color", "")))
             if track_id is not None and frame_number is not None:
                 # Both track_id and frame_number provided: filter by both
                 objects = [
                     obj for obj in filtered_all
                     if str(obj.get("track_id")) == str(track_id) and int(obj.get("frame_number")) == int(frame_number)
                 ]
-                colors = list({obj.get("color") for obj in objects if "color" in obj})
+                colors = list({
+                    _get_color_from_obj(obj)
+                    for obj in objects
+                    if ("properties" in obj and isinstance(obj.get("properties"), dict) and "color" in obj["properties"]) or "color" in obj
+                })
                 results["track_id"] = track_id
                 results["frame_number"] = frame_number
                 results["color"] = colors
             elif track_id is not None:
                 # Only track_id provided
                 objects = [obj for obj in filtered_all if str(obj.get("track_id")) == str(track_id)]
-                colors = list({obj.get("color") for obj in objects if "color" in obj})
+                colors = list({
+                    _get_color_from_obj(obj)
+                    for obj in objects
+                    if ("properties" in obj and isinstance(obj.get("properties"), dict) and "color" in obj["properties"]) or "color" in obj
+                })
                 results["track_id"] = track_id
                 results["color"] = colors
             elif frame_number is not None:
@@ -185,9 +204,9 @@ class AllObjectToolService:
                     {
                         "object_type": obj.get("object_type"),
                         "track_id": obj.get("track_id"),
-                        "color": obj.get("color")
+                        "color": _get_color_from_obj(obj)
                     }
-                    for obj in objects if "color" in obj and "object_type" in obj and "track_id" in obj
+                    for obj in objects if ("object_type" in obj and "track_id" in obj and (("properties" in obj and isinstance(obj.get("properties"), dict) and "color" in obj["properties"]) or "color" in obj))
                 ]
                 results["frame_number"] = frame_number
                 results["object_details"] = details
@@ -199,7 +218,7 @@ class AllObjectToolService:
                     str(obj["track_id"])
                     for obj in filtered_all
                     if str(obj.get("object_type", "")).strip().lower() == object_type_query
-                        and str(obj.get("color", "")).strip().lower() == color_query
+                        and str((_get_color_from_obj(obj) or "")).strip().lower() == color_query
                         and "track_id" in obj
                 }
                 results[f"{color_query}_{object_type_query}_count"] = len(matching_track_ids)
@@ -209,7 +228,7 @@ class AllObjectToolService:
                 color_query = str(args.get("color")).strip().lower()
                 type_to_tracks = {}
                 for obj in filtered_all:
-                    if str(obj.get("color", "")).strip().lower() == color_query and "object_type" in obj and "track_id" in obj:
+                    if str((_get_color_from_obj(obj) or "")).strip().lower() == color_query and "object_type" in obj and "track_id" in obj:
                         obj_type = str(obj.get("object_type")).strip().lower()
                         if obj_type not in type_to_tracks:
                             type_to_tracks[obj_type] = set()
@@ -219,7 +238,11 @@ class AllObjectToolService:
                 results[f"{color_query}_track_ids"] = {k: list(v) for k, v in type_to_tracks.items()}
             else:
                 # Neither provided: all unique colors in the video
-                colors = list({obj.get("color") for obj in filtered_all if "color" in obj})
+                colors = list({
+                    _get_color_from_obj(obj)
+                    for obj in filtered_all
+                    if ("properties" in obj and isinstance(obj.get("properties"), dict) and "color" in obj["properties"]) or "color" in obj
+                })
                 results["colors"] = colors
 
         # ✅ Object types
@@ -278,7 +301,16 @@ class AllObjectToolService:
         if query:
             q = query.lower()
             if "color" in q:
-                colors = list({obj.get("color") for obj in objects if "color" in obj})
+                def _get_color_from_obj(obj: dict) -> str:
+                    props = obj.get("properties") or {}
+                    if not isinstance(props, dict):
+                        props = {}
+                    return str(props.get("color", obj.get("color", "")))
+                colors = list({
+                    _get_color_from_obj(obj)
+                    for obj in objects
+                    if ("properties" in obj and isinstance(obj.get("properties"), dict) and "color" in obj["properties"]) or "color" in obj
+                })
                 return {"colors": colors}
             if "count" in q or "how many" in q:
                 return {"count": len(objects)}

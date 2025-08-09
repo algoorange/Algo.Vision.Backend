@@ -30,8 +30,17 @@ db = mongo_client["algo_compliance_db_2"]
 collection = db["video_details"]
 
 main_prompt = """
-You are a helpful assistant that can answer questions about the video.
-If the user asks about object counts, analytics, movements, or any question that requires database or video analysis, ALWAYS use the available tools/functions provided. Do NOT try to answer from your own knowledge—use a tool call for anything requiring data lookup or analytics.
+You are a helpful assistant for answering questions about a specific video.
+
+- Always ground answers in database/tool outputs. Never guess or invent values.
+- Persistent chat history is maintained for this session. When a question is a follow-up or uses references/pronouns (e.g., "that car", "previous frame"), first consult the chat history to resolve context and infer missing parameters (e.g., video_id, segment/frame ranges, object_type, color, track_id, time windows).
+- Based on the inferred intent, choose and call the appropriate tool(s):
+  - all_object_tool: object types, colors, track IDs, per-frame info, positions.
+  - video_segment_tool: counts by segment/time windows, unique counts by color/type, track ranges.
+  - evidence_tool: visual evidence (snapshots/clips) when the user asks for proof.
+- STRICT TOOL-FIRST POLICY: For any request involving counts, analytics, movements, IDs, ranges, or database lookups, you MUST call a tool. Only summarize/explain after reading the tool output.
+- If history does not fully disambiguate the request, ask a brief clarifying question before or after a minimal tool call.
+- Be concise. When returning an answer from a tool call, summarize key results and explicitly state any parameters inferred from chat history.
 """
 
 import threading
@@ -81,16 +90,12 @@ class ChatService:
         Handles tool calls if present in the response.
         """
         try:
-            chat_id=generate_chat_id(
-                user_id="sachin",
-                chatTab_id="tb",
-                chat_box_id="gen_chat",
-                entity_id="eid",
-                entity_type="etype",
-            )
+            # Use the provided session_id as the stable chat_id for session-based history
+            chat_id = self.session_id or generate_chat_id()
             # Add user message to memory
             # self.memory.chat_memory.add_user_message(query)
             chathistory=(self.chatMemoryForLLMService.get_chat_history_in_LLM_feedable_form(chat_id))
+            print("Chat history:", chathistory)  # Debug: Print full chat history
 
             # Build full message history from memory with correct roles
             # chat_history = self.memory.chat_memory.messages
@@ -104,13 +109,12 @@ class ChatService:
             #     for msg in chat_history
             # ]
 
-            # Send request to Groq
-            messages = [
-            {"role": "system", "content": main_prompt}
-            ]
-            messages.append({"role": "user", "content": query})
+            # Send request to Groq with proper ordering: system -> history -> current user
+            messages = [{"role": "system", "content": main_prompt}]
             if chathistory:
-                messages=chathistory+messages
+                # chathistory already contains alternating user/assistant messages
+                messages += chathistory
+            messages.append({"role": "user", "content": query})
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
@@ -140,6 +144,7 @@ class ChatService:
                     return result
                 else:
                     self.chatMemoryForLLMService.add_message(chat_id, query, result)
+                   
                     return result
 
             self.chatMemoryForLLMService.add_message(chat_id,query,message.content)
@@ -167,13 +172,13 @@ class ChatService:
                 return tool_result
             elif agent_name == "get_video_segment_details":
                 tool_result = await video_segment_tool_service.get_video_segment_details(args)
-            elif agent_name == "object_position_confidence_using_track_id":
+            elif agent_name == "fall_back":
                 if "frame_number" in args and args["frame_number"] is not None:
                     try:
                         args["frame_number"] = int(args["frame_number"])
                     except (ValueError, TypeError):
                         return {"error": "frame_number must be an integer or convertible to int."}
-                tool_result = await video_tool_service.object_position_confidence_using_track_id(args)
+                tool_result = await video_tool_service.fall_back(args)
             else:
                 return {"error": f"Unknown agent name: {agent_name}"}
             if self.reformat_prompt:

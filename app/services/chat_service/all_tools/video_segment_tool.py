@@ -172,6 +172,17 @@ class VideoSegmentToolService:
             else:
                 segment_index_set = None
 
+            def _get_color_from_obj(obj: dict) -> str:
+                """Extract color string from object.
+                Prefers obj['properties']['color'] when available, otherwise falls back to obj['color'].
+                Returns lowercase string; empty string if missing.
+                """
+                props = obj.get("properties") or {}
+                if not isinstance(props, dict):
+                    props = {}
+                col_val = props.get("color", obj.get("color", ""))
+                return str(col_val).lower()
+
             # Aggregate unique track_ids per color
             track_ids_by_color = {}
             for seg in segments:
@@ -181,7 +192,7 @@ class VideoSegmentToolService:
                     trk = obj.get("track_id")
                     if trk is None:
                         continue
-                    col = str(obj.get("color", "")).lower()
+                    col = _get_color_from_obj(obj)
                     if colors is not None and col not in colors:
                         continue
                     otype = str(obj.get("object_type", "unknown")).lower()

@@ -206,6 +206,18 @@ video_tool_description = [
           "type": ["integer", "string"],
           "description": "The specific frame number to analyze. Optional. If omitted, all frames will be searched."
         },
+        "color": {
+          "type": "string",
+          "description": "Optional. Filter by object color when retrieving evidence (e.g., 'gray')."
+        },
+        "start_time": {
+          "type": ["number", "string"],
+          "description": "Optional. Start time in seconds to filter frames when retrieving evidence."
+        },
+        "end_time": {
+          "type": ["number", "string"],
+          "description": "Optional. End time in seconds to filter frames when retrieving evidence."
+        },
         "question": {
           "type": "string",
           "description": "A natural language question from the user, such as 'Show the red car near the entrance' or 'Was a white truck detected?'. This field provides context to help extract the correct filters (color, object type, etc.) and return relevant visual evidence. Optional but useful when filters are not explicitly provided."
