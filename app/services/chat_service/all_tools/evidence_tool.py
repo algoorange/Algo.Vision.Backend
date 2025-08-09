@@ -95,7 +95,11 @@ class EvidenceToolService:
                     "track_id": obj.get('track_id', None)
                 })
         if not evidence_images:
-            return {"result": "No evidence frames found for the query."}
+            return {
+                "type": "evidence",
+                "images": [],
+                "text": f"No evidence frames found for your query: object_type={object_type}, color={color_query}, question='{question}'"
+            }
         response_text = "These are the evidence frames showing the detected " + (object_type or "objects") + "."
         return {
             "type": "evidence",

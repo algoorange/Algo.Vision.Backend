@@ -37,7 +37,14 @@ class VideoSegmentToolService:
             return str(val).lower() == "true" if isinstance(val, str) else bool(val)
 
         video_id = args.get("video_id")
-        segment_duration = float(args.get("segment_duration", 5.0))
+        # Resolve segment_duration: use provided, else auto-detect the smallest available for this video
+        seg_arg = args.get("segment_duration")
+        segment_duration = None
+        if seg_arg is not None and str(seg_arg).strip() != "":
+            try:
+                segment_duration = float(seg_arg)
+            except Exception:
+                segment_duration = None
         get_segment_object_counts = to_bool(args.get("get_segment_object_counts", False))
         get_total_object_count = to_bool(args.get("get_total_object_count", False))
         get_track_frame_range = to_bool(args.get("get_track_frame_range", False))
@@ -46,6 +53,10 @@ class VideoSegmentToolService:
         get_count_by_type = to_bool(args.get("get_count_by_type", False))
         get_count_by_color_in_segment = to_bool(args.get("get_count_by_color_in_segment", False))
         get_number_of_segments = to_bool(args.get("get_number_of_segments", False))
+        # New flags for "appears in all segments" logic
+        get_objects_present_in_all_segments = to_bool(args.get("get_objects_present_in_all_segments", False))
+        get_tracks_present_in_all_segments = to_bool(args.get("get_tracks_present_in_all_segments", False))
+        get_object_presence_by_segment = to_bool(args.get("get_object_presence_by_segment", False))
        
         count_within_seconds = float(args.get("count_within_seconds", 0))
         time_range_start = args.get("time_range_start")
@@ -56,7 +67,19 @@ class VideoSegmentToolService:
         if not video_id:
             return {"error": "video_id is required"}
 
-        # Get all matching segments
+        # If segment_duration not provided/invalid, auto-detect from DB (pick smallest for finer granularity)
+        if segment_duration is None:
+            try:
+                cursor = video_details_segment.find({"video_id": video_id}, {"segment_duration": 1, "_id": 0})
+                durations = sorted({float(doc.get("segment_duration")) for doc in cursor if doc.get("segment_duration") is not None})
+                if durations:
+                    segment_duration = durations[0]
+                else:
+                    segment_duration = 5.0
+            except Exception:
+                segment_duration = 5.0
+
+        # Get all matching segments for the chosen duration
         segments = list(video_details_segment.find({
             "video_id": video_id,
             "segment_duration": segment_duration
@@ -68,41 +91,136 @@ class VideoSegmentToolService:
         result = {}
         all_track_ids = set()
 
+        # Helpers
+        def _iter_segment_objects(segment: dict):
+            """Yield objects from the correct location in segment doc."""
+            return segment.get("objects", []) or segment.get("summary", {}).get("objects", []) or []
+
+        def _get_obj_type(obj: dict) -> str:
+            return str(obj.get("object_type", "unknown"))
+
+        def _get_track_id(obj: dict) -> str | None:
+            trk = obj.get("track_id")
+            return str(trk) if trk is not None else None
+
+        # Scope segments to an explicit time window, if provided (handles only explicit start/end)
+        segments_in_scope = segments
+        try:
+            explicit_start = float(time_range_start) if time_range_start is not None else None
+            explicit_end = float(time_range_end) if time_range_end is not None else None
+        except Exception:
+            explicit_start, explicit_end = None, None
+        if explicit_start is not None or explicit_end is not None:
+            s0 = explicit_start if explicit_start is not None else 0.0
+            e0 = explicit_end if explicit_end is not None else float("inf")
+            filtered = []
+            for seg in segments:
+                summ = seg.get("summary") or {}
+                s = summ.get("start_time")
+                e = summ.get("end_time")
+                try:
+                    s = float(s) if s is not None else None
+                    e = float(e) if e is not None else None
+                except Exception:
+                    s, e = None, None
+                # overlap if both times present
+                if s is not None and e is not None and e >= s0 and s <= e0:
+                    filtered.append(seg)
+            if filtered:
+                segments_in_scope = filtered
+
         # === 1. Segment-wise object count ===
         if get_segment_object_counts:
             segment_counts = {}
-            for segment in segments:
+            for segment in segments_in_scope:
                 index = segment.get("segment_index")
-                objects = segment.get("summary", {}).get("objects", [])
+                objects = _iter_segment_objects(segment)
                 track_ids = {
-                    obj["track_id"]
-                    for obj in objects
-                    if isinstance(obj, dict) and "track_id" in obj
+                    _get_track_id(obj)
+                    for obj in objects if isinstance(obj, dict) and _get_track_id(obj) is not None
                 }
                 segment_counts[f"segment_{index}"] = {
-                    "unique_track_ids": list(track_ids),
+                    "unique_track_ids": list({str(t) for t in track_ids}),
                     "count": len(track_ids)
                 }
                 all_track_ids.update(track_ids)
             result["segment_object_counts"] = segment_counts
 
+        # === 1b. Optional presence map per segment (track_ids and object_types) ===
+        if get_object_presence_by_segment:
+            presence = {}
+            for segment in segments_in_scope:
+                index = segment.get("segment_index")
+                objs = _iter_segment_objects(segment)
+                types = set()
+                trks = set()
+                for obj in objs:
+                    if isinstance(obj, dict):
+                        t = _get_obj_type(obj)
+                        if t:
+                            types.add(str(t))
+                        trk = _get_track_id(obj)
+                        if trk is not None:
+                            trks.add(str(trk))
+                presence[f"segment_{index}"] = {
+                    "object_types": sorted(list(types)),
+                    "track_ids": sorted(list(trks)),
+                }
+            result["object_presence_by_segment"] = presence
+
         # === 2. Total unique object count ===
         if get_total_object_count:
-            for segment in segments:
-                objects = segment.get("summary", {}).get("objects", [])
+            for segment in segments_in_scope:
+                objects = _iter_segment_objects(segment)
                 track_ids = {
-                    obj["track_id"]
-                    for obj in objects
-                    if isinstance(obj, dict) and "track_id" in obj
+                    _get_track_id(obj)
+                    for obj in objects if isinstance(obj, dict) and _get_track_id(obj) is not None
                 }
                 all_track_ids.update(track_ids)
             result["total_unique_objects"] = len(all_track_ids)
+
+        # === 2b. Object types present in ALL segments ===
+        if get_objects_present_in_all_segments:
+            per_seg_types = []
+            for segment in segments_in_scope:
+                objs = _iter_segment_objects(segment)
+                types = {str(_get_obj_type(obj)).lower() for obj in objs if isinstance(obj, dict)}
+                per_seg_types.append(types)
+            if per_seg_types:
+                intersect_types = set.intersection(*per_seg_types)
+            else:
+                intersect_types = set()
+            result["object_types_in_all_segments"] = sorted(list(intersect_types))
+
+        # === 2c. Track IDs present in ALL segments ===
+        if get_tracks_present_in_all_segments:
+            per_seg_tracks = []
+            track_type_map = {}
+            for segment in segments_in_scope:
+                objs = _iter_segment_objects(segment)
+                trks = set()
+                for obj in objs:
+                    if isinstance(obj, dict):
+                        trk = _get_track_id(obj)
+                        if trk is not None:
+                            trks.add(trk)
+                            if trk not in track_type_map:
+                                track_type_map[trk] = _get_obj_type(obj)
+                per_seg_tracks.append(trks)
+            if per_seg_tracks:
+                intersect_tracks = set.intersection(*per_seg_tracks)
+            else:
+                intersect_tracks = set()
+            result["tracks_in_all_segments"] = {
+                "track_ids": sorted(list(intersect_tracks)),
+                "track_types": {str(tid): track_type_map.get(tid) for tid in intersect_tracks}
+            }
         #=== 3. Number of segments ===
 
         if get_number_of_segments:
             # Number of segments is the count of unique segment indices found
             segment_indices = set()
-            for segment in segments:
+            for segment in segments_in_scope:
                 index = segment.get("segment_index")
                 if index is not None:
                     segment_indices.add(index)
@@ -125,12 +243,12 @@ class VideoSegmentToolService:
             min_conf = float(mc) if mc is not None else None
 
             # Resolve video end once
-            last_seg = segments[-1] if segments else None
+            last_seg = segments_in_scope[-1] if segments_in_scope else None
             video_end = None
             if last_seg is not None:
                 video_end = last_seg.get("summary", {}).get("end_time")
                 if video_end is None:
-                    video_end = (last_seg.get("segment_index", len(segments)-1) + 1) * segment_duration
+                    video_end = (last_seg.get("segment_index", len(segments_in_scope)-1) + 1) * segment_duration
 
             # Time window: first N, explicit [start,end], or last N
             video_starting_time, video_ending_time = None, None
@@ -185,7 +303,7 @@ class VideoSegmentToolService:
 
             # Aggregate unique track_ids per color
             track_ids_by_color = {}
-            for seg in segments:
+            for seg in segments_in_scope:
                 if segment_index_set is not None and seg.get("segment_index") not in segment_index_set:
                     continue
                 for obj in seg.get("objects", []):  # use only per-segment objects as per DB structure
@@ -219,7 +337,7 @@ class VideoSegmentToolService:
         if count_within_seconds > 0:
             unique_track_ids_by_type = {}
             total_detections = 0
-            for segment in segments:
+            for segment in segments_in_scope:
                 start_time = segment.get("summary", {}).get("start_time", 0)
                 if start_time < count_within_seconds:
                     objects = segment.get("summary", {}).get("objects", [])
@@ -246,14 +364,25 @@ class VideoSegmentToolService:
         # === 5. Flexible time-based object queries ===
         # Handles: 'last N seconds', 'between A and B seconds', 'after X seconds'
         time_query_result = None
-        # Compute video end time if needed
+        # Compute video end time from segment summaries
         video_end_time = None
-        if segments:
-            last_segment = segments[-1]
-            video_end_time = last_segment.get("summary", {}).get("end_time")
-            if video_end_time is None:
-                # fallback: try segment duration * number of segments
-                video_end_time = (last_segment.get("segment_index", len(segments)-1) + 1) * segment_duration
+        if segments_in_scope:
+            # prefer max(summary.end_time) across segments
+            end_candidates = []
+            for s in segments_in_scope:
+                st = s.get("summary") or {}
+                et = st.get("end_time")
+                if et is not None:
+                    try:
+                        end_candidates.append(float(et))
+                    except Exception:
+                        pass
+            if end_candidates:
+                video_end_time = max(end_candidates)
+            else:
+                # fallback: segment_duration * segment_count
+                last_segment = segments_in_scope[-1]
+                video_end_time = (last_segment.get("segment_index", len(segments_in_scope)-1) + 1) * segment_duration
         # Determine time window
         video_starting_time = None
         video_ending_time = None
@@ -277,22 +406,24 @@ class VideoSegmentToolService:
             total_detections = 0
             object_presence = {}
             for segment in segments:
-                objects = segment.get("summary", {}).get("objects", [])
+                objects = _iter_segment_objects(segment)
                 for obj in objects:
                     if isinstance(obj, dict) and "track_id" in obj:
-                        obj_type = obj.get("object_type", "unknown")
-                        track_id = obj["track_id"]
+                        obj_type = _get_obj_type(obj)
+                        track_id = _get_track_id(obj)
                         # Use object's start_time and end_time for presence
-                        o_start = obj.get("start_time", 0)
-                        o_end = obj.get("end_time", 0)
+                        props = obj.get("properties") or {}
+                        o_start = obj.get("start_time", props.get("start_time", 0))
+                        o_end = obj.get("end_time", props.get("end_time", 0))
                         # Check if object was present at any point in the window
                         if o_end >= video_starting_time and o_start <= video_ending_time:
                             if obj_type not in unique_track_ids_by_type:
                                 unique_track_ids_by_type[obj_type] = set()
-                            unique_track_ids_by_type[obj_type].add(track_id)
+                            if track_id is not None:
+                                unique_track_ids_by_type[obj_type].add(track_id)
                             total_detections += 1
                             # Track presence window for each object
-                            if track_id not in object_presence:
+                            if track_id is not None and track_id not in object_presence:
                                 object_presence[track_id] = {
                                     "object_type": obj_type,
                                     "start_time": o_start,
@@ -316,7 +447,7 @@ class VideoSegmentToolService:
             min_frame, max_frame = float("inf"), float("-inf")
             found = False
             for segment in segments:
-                for obj in segment.get("summary", {}).get("objects", []):
+                for obj in _iter_segment_objects(segment):
                     if isinstance(obj, dict) and obj.get("track_id") == str(track_id):
                         found = True
                         min_frame = min(min_frame, obj.get("start_frame", float("inf")))
@@ -335,7 +466,7 @@ class VideoSegmentToolService:
             min_time, max_time = float("inf"), float("-inf")
             found = False
             for segment in segments:
-                for obj in segment.get("summary", {}).get("objects", []):
+                for obj in _iter_segment_objects(segment):
                     if isinstance(obj, dict) and obj.get("track_id") == str(track_id):
                         found = True
                         min_time = min(min_time, obj.get("start_time", float("inf")))
@@ -354,7 +485,7 @@ class VideoSegmentToolService:
             start_pos, end_pos = None, None
             found = False
             for segment in segments:
-                for obj in segment.get("summary", {}).get("objects", []):
+                for obj in _iter_segment_objects(segment):
                     if isinstance(obj, dict) and obj.get("track_id") == str(track_id):
                         found = True
                         start_pos = obj.get("start_position", start_pos)
@@ -372,7 +503,8 @@ class VideoSegmentToolService:
         if not result:
             result["message"] = (
                 "No valid flags provided. Use flags like "
-                "`get_segment_object_counts`, `get_total_object_count`, `count_within_seconds`, or track-level flags, "
+                "`get_segment_object_counts`, `get_total_object_count`, `get_objects_present_in_all_segments`, `get_tracks_present_in_all_segments`, "
+                "`get_object_presence_by_segment`, `count_within_seconds`, or track-level flags."
             )
 
         return {"result": result, "reformat": True}

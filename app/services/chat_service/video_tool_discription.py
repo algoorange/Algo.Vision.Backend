@@ -148,6 +148,18 @@ video_tool_description = [
           "type": "boolean",
           "description": "If true, return the number of segments in the video for the given segment_duration. return how many segment in the video for the given segment_duration."
         },
+        "get_objects_present_in_all_segments": {
+          "type": "boolean",
+          "description": "If true, return the list of object types that appear in every segment (intersection across all segments). Use for questions like 'Which object appears in all segments?'."
+        },
+        "get_tracks_present_in_all_segments": {
+          "type": "boolean",
+          "description": "If true, return the track IDs that appear in every segment along with their object types. Helpful when using track-level continuity across the entire video."
+        },
+        "get_object_presence_by_segment": {
+          "type": "boolean",
+          "description": "If true, return per-segment presence maps listing object_types and track_ids for each segment (e.g., {segment_0: {...}, segment_1: {...}}). Useful for verifying presence across segments."
+        },
         "get_busiest_segment": {
           "type": "boolean",
           "description": "If true, return the segment with the highest object count. Can be combined with object_type to get busiest segment for a specific type."
@@ -224,6 +236,39 @@ video_tool_description = [
         }
       },
       "required": ["video_id", "get_evidence"]
+    }
+  }
+},
+{
+  "type": "function",
+  "function": {
+    "name": "fall_back",
+    "description": "Generic catch-all tool for handling any query that does not match a specific analytics tool. \
+It can answer general questions about a video by analyzing stored segment descriptions, object counts, and object details in the database. \
+This includes vague questions, unsupported queries, or cases where no specific tool applies. \
+The fallback can extract key filters (color, object type, frame number, time range) from the user's natural language question, \
+search the database for relevant segments and objects, and return a clear, concise summary of what is found. \
+If no direct match is found, it will use segment summaries to describe the scene. \
+Always use this when the user's request is outside the capabilities of the other available tools.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "video_id": {
+          "type": "string",
+          "description": "The unique identifier of the video to search."
+        },
+        "frame_number": {
+          "type": ["integer", "string"],
+          "description": "Optional. Specific frame number to look for matching objects."
+        },
+        "question": {
+          "type": "string",
+          "description": "The original natural language query from the user, such as 'Show the red car', \
+'What's happening in the video?', or 'Was a person detected near the traffic light?'. \
+The fallback will analyze this text to extract possible filters and find relevant results."
+        }
+      },
+      "required": ["video_id", "question"]
     }
   }
 }

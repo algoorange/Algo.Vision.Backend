@@ -19,6 +19,7 @@ from app.services.chat_service.video_tool_discription import video_tool_descript
 from app.services.chat_service.all_tools.all_object_tool import AllObjectToolService
 from app.services.chat_service.all_tools.video_segment_tool import VideoSegmentToolService
 from app.services.chat_service.all_tools.evidence_tool import EvidenceToolService
+from app.services.chat_service.all_tools.fall_back_tool import FallBackToolService
 from app.services.chat_service.chathistory import ChatMemoryForLLMService, generate_chat_id
 
 load_dotenv()
@@ -38,9 +39,12 @@ You are a helpful assistant for answering questions about a specific video.
   - all_object_tool: object types, colors, track IDs, per-frame info, positions.
   - video_segment_tool: counts by segment/time windows, unique counts by color/type, track ranges.
   - evidence_tool: visual evidence (snapshots/clips) when the user asks for proof.
+- For generic/overview questions (e.g., "What's happening in the video?"), CALL THE FALLBACK TOOL to synthesize an overall summary by combining all segment descriptions in order and aggregating object counts across segments. Return a concise overall summary plus brief per-segment notes when helpful.
 - STRICT TOOL-FIRST POLICY: For any request involving counts, analytics, movements, IDs, ranges, or database lookups, you MUST call a tool. Only summarize/explain after reading the tool output.
 - If history does not fully disambiguate the request, ask a brief clarifying question before or after a minimal tool call.
 - Be concise. When returning an answer from a tool call, summarize key results and explicitly state any parameters inferred from chat history.
+
+- Fallback behavior: If no existing tool applies to the user's question, if the question is unrelated to the project scope, or if there is no tool available for the request, CALL THE FALLBACK FUNCTION. Use it to provide a safe, concise response and optionally ask for clarification or suggest supported queries. Do not fabricate analytics without a tool call.
 """
 
 import threading
@@ -165,6 +169,7 @@ class ChatService:
             video_tool_service = AllObjectToolService(request=None)
             video_segment_tool_service = VideoSegmentToolService(request=None)
             evidence_tool_service = EvidenceToolService(request=None)
+            fall_back_tool_service = FallBackToolService(request=None)
             if agent_name == "get_all_object_details":
                 tool_result = await video_tool_service.get_all_object_details(args)
             elif agent_name == "show_evidence":
@@ -172,15 +177,8 @@ class ChatService:
                 return tool_result
             elif agent_name == "get_video_segment_details":
                 tool_result = await video_segment_tool_service.get_video_segment_details(args)
-            elif agent_name == "fall_back":
-                if "frame_number" in args and args["frame_number"] is not None:
-                    try:
-                        args["frame_number"] = int(args["frame_number"])
-                    except (ValueError, TypeError):
-                        return {"error": "frame_number must be an integer or convertible to int."}
-                tool_result = await video_tool_service.fall_back(args)
             else:
-                return {"error": f"Unknown agent name: {agent_name}"}
+                tool_result = await fall_back_tool_service.fall_back(args)
             if self.reformat_prompt:
                 reformat_prompt = (
                     self.reformat_prompt or
