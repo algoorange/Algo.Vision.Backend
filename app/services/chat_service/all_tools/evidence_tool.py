@@ -45,6 +45,20 @@ class EvidenceToolService:
         end_time = args.get("end_time")
         get_evidence = args.get("get_evidence", True)
         question = args.get("question", "")
+        # Limiting & pagination controls
+        limit = int(args.get("limit", 12))  # default to 12 images
+        offset = int(args.get("offset", 0)) # skip first N matches
+        unique_per_frame = bool(args.get("unique_per_frame", True))
+        # If True, only include the first occurrence (start_frame) of each track as evidence
+        per_track_first_only = bool(args.get("per_track_first_only", False))
+
+        # If it's a generic query (no filters) and no explicit limit passed,
+        # prefer showing representative, limited evidence by default
+        if (
+            not any([object_type, track_id, frame_number, color_query, start_time, end_time])
+            and "limit" not in args
+        ):
+            per_track_first_only = True
 
         if not get_evidence:
             return {"result": "Evidence retrieval not requested."}
@@ -57,6 +71,9 @@ class EvidenceToolService:
             return {"error": "Video not found."}
 
         evidence_images = []
+        seen_frames = set()
+        seen_tracks = set()
+        # Iterate frames in ascending order to provide chronological evidence
         for frame in video_doc.get("frames", []):
             if frame_number is not None and int(frame["frame_number"]) != int(frame_number):
                 continue
@@ -73,6 +90,22 @@ class EvidenceToolService:
                 obj_color = obj.get("properties", {}).get("color", obj.get("color", ""))
                 if color_query and str(obj_color).lower() != str(color_query).lower():
                     continue
+
+                # Uniqueness / representativeness controls
+                if unique_per_frame:
+                    if frame.get("frame_id") in seen_frames:
+                        continue
+                if per_track_first_only:
+                    # Only include an object when it's at its start_frame, if available
+                    start_frame_for_track = obj.get("start_frame")
+                    if start_frame_for_track is not None and int(frame["frame_number"]) != int(start_frame_for_track):
+                        continue
+                # Avoid repeating the same track multiple times if we already added one
+                t_id = obj.get("track_id")
+                if t_id is not None and per_track_first_only:
+                    if t_id in seen_tracks:
+                        continue
+
                 frame_id = frame["frame_id"]
                 # Try to get image from MongoDB (BSON Binary)
                 image_doc = self.db["frame_images"].find_one({"video_id": video_id, "frame_id": frame_id})
@@ -94,15 +127,29 @@ class EvidenceToolService:
                     "object_type": obj.get('object_type', ''),
                     "track_id": obj.get('track_id', None)
                 })
+                # Mark seen keys after accepting this evidence
+                if unique_per_frame:
+                    seen_frames.add(frame_id)
+                if per_track_first_only and t_id is not None:
+                    seen_tracks.add(t_id)
+
+                # Stop scanning once we have gathered enough to satisfy offset+limit
+                if len(evidence_images) >= (offset + limit):
+                    break
+            # Break outer loop too if we've reached the window
+            if len(evidence_images) >= (offset + limit):
+                break
         if not evidence_images:
             return {
                 "type": "evidence",
                 "images": [],
                 "text": f"No evidence frames found for your query: object_type={object_type}, color={color_query}, question='{question}'"
             }
+        # Apply pagination window: offset + limit
+        paged_images = evidence_images[offset: offset + limit]
         response_text = "These are the evidence frames showing the detected " + (object_type or "objects") + "."
         return {
             "type": "evidence",
-            "images": evidence_images,
+            "images": paged_images,
             "text": response_text
         }
