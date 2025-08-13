@@ -21,6 +21,11 @@ torchvision>=0.15.0 # PyTorch for U-Net
 # Object Tracking
 deep-sort-realtime>=1.3.2 # Object Tracking
 torchaudio
+torchreid==0.2.5
+yacs
+termcolor
+tabulate
+
 
 # NLP and Embeddings
 sentence-transformers>=2.2.2 # Generate the embeddings of the video
@@ -60,6 +65,14 @@ pymongo>=4.0.0
 
 shapely
 
-#google-adk
-google-adk==1.6.1
-litellm
+
+#NVIDIA Object Detection
+pillow
+onnx
+onnxruntime
+scikit-learn
+# nvidia-pyindex
+# nvidia-pip
+
+gdown
+tensorboard

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import torch
-from app.services import object_detector
+from app.services.object_detection_service import object_detector
 
 router = APIRouter()
 

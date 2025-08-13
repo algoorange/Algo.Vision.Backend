@@ -1,6 +1,8 @@
 	
 from ultralytics import YOLO, RTDETR
 import torch
+import torchvision
+from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2, FasterRCNN_ResNet50_FPN_V2_Weights
 import cv2
 import numpy as np
 import torchvision.transforms as transforms
@@ -8,15 +10,21 @@ from torchvision.models import detection
 import torchvision
 from app.utils.color_detection import detect_dominant_color
 # from app.services.crack_detector import predict_crack
+from app.services.NVIDIA_object_detection.nvidia_object_detection import detect_trafficcamnet
 
 # Load YOLOv8 model
 yolo_model = YOLO("yolov8n.pt")
 
-# Load Faster R-CNN model
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-faster_rcnn_model = detection.fasterrcnn_resnet50_fpn(pretrained=True)
-faster_rcnn_model.to(device)
-faster_rcnn_model.eval()
+device = torch.device("cpu")
+weights = FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT
+model = fasterrcnn_resnet50_fpn_v2(
+    weights=weights,
+    # Reduce image size inside the model for CPU speedups
+    min_size=480,   # try 400–600
+    max_size=800    # cap max dimension
+).to(device).eval()
+
+preprocess = weights.transforms()
 
 # COCO class names for Faster R-CNN
 COCO_CLASSES = [
@@ -45,9 +53,11 @@ DETECTION_CONFIG = {
     "use_yolo": False,
     "use_rtdetr": False,
     "use_faster_rcnn": True,
+    "use_trafficcamnet": False,
     "yolo_threshold": 0.60,
     "rtdetr_threshold": 0.60,
     "faster_rcnn_threshold": 0.6,
+    "trafficcamnet_threshold": 0.50,
     "prioritize_faster_rcnn": True  # If True, Faster R-CNN results come first
 }
 
@@ -100,6 +110,23 @@ def detect_with_yolo(frame):
             })
     return detections
 
+def detect_with_trafficcamnet(frame):
+    """TrafficCamNet (ResNet-18 ONNXRuntime) detection"""
+    detections = []
+    try:
+        tcn_dets, _ = detect_trafficcamnet(frame, conf_threshold=DETECTION_CONFIG.get("trafficcamnet_threshold", 0.5))
+        # Optionally enrich with color detection
+        for det in tcn_dets:
+            x, y, w, h = det["bbox"]
+            crop = frame[y:y+h, x:x+w]
+            color = detect_dominant_color(crop) if crop.size > 0 else "unknown"
+            det["color"] = color
+            detections.append(det)
+    except Exception as e:
+        # Fallback: return empty to avoid breaking pipeline
+        print(f"[TrafficCamNet] detection error: {e}")
+    return detections
+
 def detect_with_rtdetr(frame):
     """RTDETR detection"""
     detections = []
@@ -126,7 +153,7 @@ def detect_with_faster_rcnn(frame):
     frame_tensor = transform(frame_rgb).unsqueeze(0).to(device)
     
     with torch.no_grad():
-        predictions = faster_rcnn_model(frame_tensor)
+        predictions = model(frame_tensor)
     
     # Process Faster R-CNN predictions
     boxes = predictions[0]['boxes'].cpu().numpy()
@@ -171,25 +198,32 @@ def detect_objects(frame):
     all_detections = []
 
     # Run detections based on configuration
-    if DETECTION_CONFIG["use_yolo"]:
-        yolo_detections = detect_with_yolo(frame)
-        all_detections.extend(yolo_detections)
+    # if DETECTION_CONFIG["use_yolo"]:
+    #     yolo_detections = detect_with_yolo(frame)
+    #     all_detections.extend(yolo_detections)
 
-    if DETECTION_CONFIG["use_rtdetr"]:
-        rtdetr_detections = detect_with_rtdetr(frame)
-        all_detections.extend(rtdetr_detections)
+    # if DETECTION_CONFIG["use_rtdetr"]:
+    #     rtdetr_detections = detect_with_rtdetr(frame)
+    #     all_detections.extend(rtdetr_detections)
 
     if DETECTION_CONFIG["use_faster_rcnn"]:
         faster_rcnn_detections = detect_with_faster_rcnn(frame)
         all_detections.extend(faster_rcnn_detections)
 
+    # if DETECTION_CONFIG.get("use_trafficcamnet", False):
+    #     tcn_detections = detect_with_trafficcamnet(frame)
+    #     all_detections.extend(tcn_detections)
+
     # Sort detections by priority if configured
     if DETECTION_CONFIG["prioritize_faster_rcnn"]:
         all_detections.sort(key=lambda x: {
-            "Faster R-CNN": 0, 
+             "Faster R-CNN": 0, 
+             # high priority as well
             "RTDETR": 1, 
-            "YOLOv8": 2
-        }.get(x["source"], 3))
+            "YOLOv8": 2,
+             "TrafficCamNet": 3,
+            
+        }.get(x["source"], 4))
 
     # Draw boxes and labels with different colors for each model
     annotated_frame = frame.copy()
@@ -204,6 +238,8 @@ def detect_objects(frame):
             color = (255, 0, 0)  # Blue
         elif source == "RTDETR":
             color = (0, 255, 255)  # Yellow
+        elif source == "TrafficCamNet":
+            color = (0, 140, 255)  # Orange
         else:  # YOLOv8
             color = (0, 255, 0)  # Green
         # Special color for trucks
@@ -229,4 +265,4 @@ def get_detection_config():
 
 def get_available_models():
     """Get list of available detection models"""
-    return ["YOLOv8", "RTDETR", "Faster R-CNN"]
+    return ["YOLOv8", "RTDETR", "Faster R-CNN", "TrafficCamNet"]

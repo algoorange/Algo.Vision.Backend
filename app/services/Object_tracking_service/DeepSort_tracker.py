@@ -1,25 +1,17 @@
 from deep_sort_realtime.deepsort_tracker import DeepSort
 import math
 
-# Initialize trackers
-# deepsort_tracker = DeepSort(
-#     max_age=30,
-#     n_init=3,
-#     embedder="mobilenet",  # 👈 use mobilenet for appearance features
-#     half=True,             # use FP16 if GPU supports
-#     max_iou_distance=0.7
-# )
-
 deepsort_tracker = DeepSort(
-    max_age=50,              # Increase from 30 - keep tracks longer
-    n_init=2,                # Decrease from 3 - confirm tracks faster  
-    embedder="mobilenet",    
-    half=True,
-    max_iou_distance=0.7,   
-    max_cosine_distance=0.3, # Add this - stricter appearance matching
-    nn_budget=100,           # Add this - limit feature budget
-    nms_max_overlap=0.9      # Add this - reduce NMS aggressiveness
+    max_age=50,
+    n_init=2,
+    embedder="mobilenet",             # Valid embedder option
+    half=False,                       # Use full precision for CPU
+    max_iou_distance=0.7,
+    max_cosine_distance=0.2,          # Stricter matching
+    nn_budget=300,                    # Keep more history for matching
+    nms_max_overlap=0.9
 )
+
 
 # Color detection function moved to centralized utility: app.utils.color_detection
 

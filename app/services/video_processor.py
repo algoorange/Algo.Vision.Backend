@@ -1,7 +1,8 @@
 import os
 import cv2
 import numpy as np
-from app.services import object_detector, object_tracker
+from app.services.object_detection_service import object_detector
+from app.services.Object_tracking_service import DeepSort_tracker
 from app.utils.helpers import format_result, build_summary_prompt, scale_coordinates, is_bbox_in_polygon
 from app.utils.embeddings import embedder, embedding_index, embedding_metadata
 from app.services.summary_generate_by_llm import generate_summary, generate_segment_description
@@ -104,7 +105,8 @@ async def process_video(file: UploadFile, video_id: str, coords=None, preview_wi
             if filtered_objects:
                 # --- TRACKING AND ANNOTATION WITH TRACK ID ---
                 # Run tracking on the resized frame and filtered detections
-                tracks = object_tracker.track_objects(resized_frame, filtered_objects)
+                tracks = DeepSort_tracker.track_objects(resized_frame, filtered_objects)
+                
                 if tracks:  # Only proceed if there are actual tracked objects
                     tracks_by_frame[frame_number] = tracks  # <-- Store tracks for this frame
 

@@ -1,5 +1,5 @@
 
-from app.services.object_tracker import calculate_angle
+from app.services.Object_tracking_service.DeepSort_tracker import calculate_angle
 
 def format_result(tracks, total_frames, fps, duration):
     formatted_tracks = []
