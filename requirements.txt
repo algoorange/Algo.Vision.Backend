@@ -65,14 +65,9 @@ pymongo>=4.0.0
 
 shapely
 
+# Apache Airflow
+apache-airflow
 
-#NVIDIA Object Detection
-pillow
-onnx
-onnxruntime
-scikit-learn
-# nvidia-pyindex
-# nvidia-pip
-
+# gdown
 gdown
 tensorboard

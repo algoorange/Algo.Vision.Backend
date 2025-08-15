@@ -271,5 +271,39 @@ The fallback will analyze this text to extract possible filters and find relevan
       "required": ["video_id", "question"]
     }
   }
-}
+},
+{
+  "type": "function",
+  "function": {
+    "name": "generic_responce_tool",
+    "description": "Generic catch-all tool for handling generic/overview questions that are not related to the vision project and the user uploaded video. \
+This tool is only designed to handle generic questions and not anything else. \
+Examples of generic questions may include: \
+- Greetings (e.g. \"Hi there\", \"hello\", \"hi\", \"hey\", etc...) \
+- Introductions (e.g. \"I'm John Doe\", \"My name is Jane Doe\", etc...) \
+- Small talk (e.g. \"How are you doing?\", \"What's up?\", etc...) \
+- Jokes or humor (e.g. \"Knock knock\", \"Why was the math book sad?\", etc...) \
+- Random questions (e.g. \"What's the weather like today?\", \"What's your favorite color?\", etc...) \
+- Conversation starters (e.g. \"How was your day?\", \"What did you do today?\", etc...) \
+- Goodbyes (e.g. \"Goodbye\", \"See you later\", \"Bye\", etc...)",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "video_id": {
+          "type": "string",
+          "description": "The unique identifier of the video to search. This is not used by the tool."
+        },
+        "question": {
+          "type": "string",
+          "description": "The original natural language query from the user, such as 'Show the red car', \
+'What's happening in the video?', or 'Was a person detected near the traffic light?'. \
+The fallback will analyze this text to extract possible filters and find relevant results."
+        }
+      },
+      "required": ["video_id", "question"]
+    }
+  }
+},
+
+
     ]
